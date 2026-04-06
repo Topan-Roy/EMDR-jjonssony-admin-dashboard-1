@@ -12,7 +12,9 @@ import { logout } from "@/component/redux/features/authSlice";
 
 function NavItem({ icon, label, href }: { icon: React.ReactNode, label: string, href: string }) {
   const pathname = usePathname();
-  const active = pathname === href;
+  const active =
+    pathname === href ||
+    (href !== "/dashboard" && pathname.startsWith(`${href}/`));
   return (
     <Link href={href} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${active ? "bg-[#4f795a] text-white shadow-md" : "text-gray-500 hover:bg-gray-50"}`}>
       {icon}
