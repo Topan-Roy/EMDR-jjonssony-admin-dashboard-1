@@ -8,6 +8,8 @@ const settingsOptions = [
   { title: "Change Password", href: "/dashboard/settings/change-password" },
   { title: "Terms & Conditions", href: "/dashboard/settings/terms" },
   { title: "Privacy Policy", href: "/dashboard/settings/privacy-policy" },
+  { title: "About Us", href: "/dashboard/settings/about-us" },
+  { title: "Support Requests", href: "/dashboard/settings/support-requests" },
   { title: "FAQ", href: "/dashboard/settings/faq" },
 ];
 
