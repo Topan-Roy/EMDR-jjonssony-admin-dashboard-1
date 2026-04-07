@@ -185,6 +185,10 @@ export default function SettingPrivacyPolicy() {
     }
   };
 
+  const applyFormat = (command: string) => {
+    document.execCommand(command, false, undefined);
+  };
+
   return (
     <div className="max-w-6xl">
       <div className="mb-6 flex items-center justify-between">
@@ -241,19 +245,41 @@ export default function SettingPrivacyPolicy() {
           </div>
         )}
 
-        {(isLoading || isFetching) && !isError && (
-          <p className="mb-6 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            Loading Privacy Policy...
-          </p>
-        )}
-
         {isEditing && (
-          <div className="mb-6 flex gap-4 border-b border-gray-100 pb-4 text-gray-400">
-            <Bold size={18} />
-            <Italic size={18} />
-            <AlignLeft size={18} />
-            <List size={18} />
-            <span className="ml-auto text-xs italic">Editing Mode Enabled</span>
+          <div className="mb-6 flex gap-2 border-b border-gray-100 pb-4">
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("bold"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Bold"
+            >
+              <Bold size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("italic"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Italic"
+            >
+              <Italic size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("justifyLeft"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Align Left"
+            >
+              <AlignLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("insertUnorderedList"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="List"
+            >
+              <List size={18} />
+            </button>
+            <span className="ml-auto text-[10px] uppercase tracking-wider text-gray-400 self-center">Rich Text Edit Mode</span>
           </div>
         )}
 
@@ -261,78 +287,88 @@ export default function SettingPrivacyPolicy() {
           <p className="text-sm text-gray-500">No privacy policy found.</p>
         ) : !isEditing ? (
           <div className="space-y-6 text-gray-700">
-            <h2 className="text-xl font-bold">Privacy Policy Overview</h2>
-            <p className="whitespace-pre-wrap break-words leading-relaxed">
-              {currentOverview || "No overview found."}
-            </p>
+            <h2 className="text-xl font-bold text-black border-b pb-2">Privacy Policy Overview</h2>
+            <div 
+              className="prose max-w-none break-words leading-relaxed text-black prose-p:my-2 prose-ul:list-disc prose-li:ml-4"
+              dangerouslySetInnerHTML={{ __html: currentOverview || "No overview found." }}
+            />
 
             {currentSections.map((section, index) => (
-              <div key={`${section.order}-${section.title}-${index}`}>
-                <h3 className="mb-1 text-lg font-semibold">
+              <div key={`${section.order}-${section.title}-${index}`} className="pt-4">
+                <h3 className="mb-2 text-lg font-bold text-black underline decoration-orange-200">
                   {index + 1}. {section.title || `Section ${index + 1}`}
                 </h3>
-                <p className="whitespace-pre-wrap break-words leading-relaxed">
-                  {section.content || "No content."}
-                </p>
+                <div 
+                  className="prose max-w-none break-words leading-relaxed text-black prose-p:my-2 prose-ul:list-disc prose-li:ml-4"
+                  dangerouslySetInnerHTML={{ __html: section.content || "No content." }}
+                />
               </div>
             ))}
 
             {currentChangelog && (
-              <div>
-                <h3 className="mb-1 text-lg font-semibold">Changelog</h3>
-                <p className="whitespace-pre-wrap break-words leading-relaxed">
-                  {currentChangelog}
-                </p>
+              <div className="mt-10 border-t border-dashed pt-6">
+                <h3 className="mb-2 text-lg font-bold text-[#4f795a]">Changelog</h3>
+                <div 
+                  className="prose max-w-none break-words leading-relaxed text-gray-600 italic border-l-4 border-[#4f795a] pl-4"
+                  dangerouslySetInnerHTML={{ __html: currentChangelog }}
+                />
               </div>
             )}
           </div>
         ) : (
-          <div className="space-y-4 text-gray-700">
-            <h2 className="text-xl font-bold">Privacy Policy Overview</h2>
-            <textarea
-              rows={3}
-              value={draftOverview}
-              onChange={(event) => setDraftOverview(event.target.value)}
-              className="w-full resize-none border-0 bg-transparent p-0 text-base leading-relaxed text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
-              placeholder="Write policy overview..."
-            />
+          <div className="space-y-8 text-black">
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-[#4f795a]">Privacy Policy Overview</h2>
+              <div
+                contentEditable
+                onInput={(e) => setDraftOverview(e.currentTarget.innerHTML)}
+                onPaste={(e) => {
+                  e.preventDefault();
+                  const text = e.clipboardData.getData("text/plain");
+                  document.execCommand("insertText", false, text);
+                }}
+                className="min-h-[100px] w-full rounded-xl border border-gray-100 bg-[#fefefe] p-4 text-base leading-relaxed text-black outline-none focus:border-[#4f795a]"
+                dangerouslySetInnerHTML={{ __html: draftOverview }}
+              />
+            </div>
 
             {draftSections.map((section, index) => (
-              <div key={`section-edit-${index + 1}`} className="space-y-1.5">
-                {/* <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                  {index + 1}. Title
-                </p> */}
-                <input
+              <div key={`section-edit-${index + 1}`} className="space-y-3 rounded-2xl border border-gray-100 p-5 bg-[#fafafa]">
+                 <input
                   type="text"
                   value={section.title}
                   onChange={(event) =>
                     handleDraftSectionTitleChange(index, event.target.value)
                   }
-                  className="w-full appearance-none border-0 bg-transparent p-0 text-lg font-semibold text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
-                  placeholder={`Section ${index + 1} title`}
+                  className="w-full border-b border-gray-200 bg-transparent py-2 text-lg font-bold text-black outline-none focus:border-[#4f795a]"
+                  placeholder={`Section ${index + 1} Title`}
                 />
-                {/* <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                  Content
-                </p> */}
-                <textarea
-                  rows={2}
-                  value={section.content}
-                  onChange={(event) =>
-                    handleDraftSectionContentChange(index, event.target.value)
-                  }
-                  className="w-full resize-none border-0 bg-transparent p-0 leading-relaxed text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
+                <div
+                  contentEditable
+                  onInput={(e) => handleDraftSectionContentChange(index, e.currentTarget.innerHTML)}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData("text/plain");
+                    document.execCommand("insertText", false, text);
+                  }}
+                  className="min-h-[120px] w-full rounded-lg bg-white p-4 leading-relaxed text-black outline-none border border-gray-50 focus:border-[#4f795a] prose-ul:list-disc"
+                  dangerouslySetInnerHTML={{ __html: section.content }}
                 />
               </div>
             ))}
 
-            <div className="space-y-2">
-              <h3 className="text-lg font-semibold">Changelog</h3>
-              <textarea
-                rows={2}
-                value={draftChangelog}
-                onChange={(event) => setDraftChangelog(event.target.value)}
-                className="w-full resize-none border-0 bg-transparent p-0 leading-relaxed text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
-                placeholder="Write changelog..."
+            <div className="space-y-3 pt-6 border-t border-gray-100">
+              <h3 className="text-lg font-bold text-[#4f795a]">Changelog</h3>
+              <div
+                contentEditable
+                onInput={(e) => setDraftChangelog(e.currentTarget.innerHTML)}
+                onPaste={(e) => {
+                  e.preventDefault();
+                  const text = e.clipboardData.getData("text/plain");
+                  document.execCommand("insertText", false, text);
+                }}
+                className="min-h-[100px] w-full rounded-xl border border-gray-100 bg-[#fefefe] p-4 text-sm italic text-gray-700 outline-none focus:border-[#4f795a]"
+                dangerouslySetInnerHTML={{ __html: draftChangelog }}
               />
             </div>
           </div>

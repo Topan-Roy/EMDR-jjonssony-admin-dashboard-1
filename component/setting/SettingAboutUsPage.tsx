@@ -122,6 +122,21 @@ export default function SettingAboutUsPage() {
     }
   };
 
+  const editorRef = React.useRef<HTMLDivElement>(null);
+
+  const applyFormat = (command: string) => {
+    document.execCommand(command, false, undefined);
+    if (editorRef.current) {
+      setDraftOverview(editorRef.current.innerHTML);
+    }
+  };
+
+  const handleInput = () => {
+    if (editorRef.current) {
+      setDraftOverview(editorRef.current.innerHTML);
+    }
+  };
+
   return (
     <div className="max-w-6xl">
       <div className="mb-6 flex items-center justify-between">
@@ -178,43 +193,70 @@ export default function SettingAboutUsPage() {
           </div>
         )}
 
-        {/* {(isLoading || isFetching) && !isError && (
-          <p className="mb-6 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            Loading About Us...
-          </p>
-        )} */}
-
         {isEditing && (
-          <div className="mb-6 flex gap-4 border-b border-gray-100 pb-4 text-gray-400">
-            <Bold size={18} />
-            <Italic size={18} />
-            <AlignLeft size={18} />
-            <List size={18} />
-            <span className="ml-auto text-xs italic">Editing Mode Enabled</span>
+          <div className="mb-6 flex gap-2 border-b border-gray-100 pb-4">
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("bold"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Bold"
+            >
+              <Bold size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("italic"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Italic"
+            >
+              <Italic size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("justifyLeft"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Align Left"
+            >
+              <AlignLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("insertUnorderedList"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="List"
+            >
+              <List size={18} />
+            </button>
+            <span className="ml-auto text-[10px] uppercase tracking-wider text-gray-400 self-center">Rich Text Edit Mode</span>
           </div>
         )}
 
         {!isEditing ? (
           <div className="space-y-6 text-gray-700">
-            {/* <h2 className="text-xl font-bold">Who We Are</h2> */}
-            <p className="whitespace-pre-wrap break-words leading-relaxed">
-              {currentOverview || "No About Us content found."}
-            </p>
+            <div 
+              className="prose max-w-none break-words leading-relaxed text-black prose-p:my-2 prose-ul:list-disc prose-li:ml-4"
+              dangerouslySetInnerHTML={{ __html: currentOverview || "No About Us content found." }}
+            />
             {lastUpdated && (
-              <p className="text-xs italic text-gray-500">Last updated: {lastUpdated}</p>
+              <p className="text-xs italic text-gray-500 mt-8">Last updated: {lastUpdated}</p>
             )}
           </div>
         ) : (
           <div className="space-y-4 text-gray-700">
             <label className="block text-sm font-medium text-gray-700">
-              About Us Content
+              About Us Content (Rich Editor)
             </label>
-            <textarea
-              rows={14}
-              value={draftOverview}
-              onChange={(event) => setDraftOverview(event.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-white p-4 text-sm leading-relaxed text-gray-800 outline-none transition-all focus:border-[#4f795a] focus:ring-1 focus:ring-[#4f795a]"
-              placeholder="Write About Us content..."
+            <div
+              ref={editorRef}
+              contentEditable
+              onInput={handleInput}
+              onPaste={(e) => {
+                e.preventDefault();
+                const text = e.clipboardData.getData("text/plain");
+                document.execCommand("insertText", false, text);
+              }}
+              className="min-h-[400px] w-full rounded-xl border border-gray-200 bg-white p-6 text-sm leading-relaxed text-black outline-none transition-all focus:border-[#4f795a] prose-ul:list-disc focus:ring-1 focus:ring-[#4f795a]"
+              dangerouslySetInnerHTML={{ __html: draftOverview }}
             />
           </div>
         )}

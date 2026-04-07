@@ -234,6 +234,10 @@ export default function SettingTermsAndConditions() {
     }
   };
 
+  const applyFormat = (command: string) => {
+    document.execCommand(command, false, undefined);
+  };
+
   return (
     <div className="max-w-6xl">
       <div className="mb-6 flex items-center justify-between">
@@ -290,19 +294,41 @@ export default function SettingTermsAndConditions() {
           </div>
         )}
 
-        {(isLoading || isFetching) && !isError && (
-          <p className="mb-6 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            Loading Terms & Conditions...
-          </p>
-        )}
-
         {isEditing && (
-          <div className="mb-6 flex gap-4 border-b border-gray-100 pb-4 text-gray-400">
-            <Bold size={18} />
-            <Italic size={18} />
-            <AlignLeft size={18} />
-            <List size={18} />
-            <span className="ml-auto text-xs italic">Editing Mode Enabled</span>
+          <div className="mb-6 flex gap-2 border-b border-gray-100 pb-4">
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("bold"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Bold"
+            >
+              <Bold size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("italic"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Italic"
+            >
+              <Italic size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("justifyLeft"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="Align Left"
+            >
+              <AlignLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); applyFormat("insertUnorderedList"); }}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-black transition-colors"
+              title="List"
+            >
+              <List size={18} />
+            </button>
+            <span className="ml-auto text-[10px] uppercase tracking-wider text-gray-400 self-center">Rich Text Edit Mode</span>
           </div>
         )}
 
@@ -311,67 +337,97 @@ export default function SettingTermsAndConditions() {
         ) : !isEditing ? (
           <div className="space-y-6 text-gray-700">
             {lastUpdated && (
-              <p className="mb-2 font-bold text-[#4f795a]">Last Updated: {lastUpdated}</p>
+              <p className="mb-2 font-bold text-[#4f795a] border-b pb-1">Last Updated: {lastUpdated}</p>
             )}
 
             {currentSections.map((section, index) => (
-              <div key={`${section.order}-${section.title}-${index}`}>
-                <h3 className="mb-2 text-lg font-bold">
-                  {index + 1}. {section.title || `Section ${index + 1}`}
+              <div key={`${section.order}-${section.title}-${index}`} className="pt-4">
+                <h3 className="mb-3 text-lg font-bold text-black flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-50 text-[14px] text-orange-600 border border-orange-100">{index + 1}</span>
+                  {section.title || `Section ${index + 1}`}
                 </h3>
-                <p className="mb-4 whitespace-pre-wrap break-words leading-relaxed">
-                  {section.content}
-                </p>
-                {section.bullets.length > 0 && (
-                  <ul className="list-disc space-y-1 pl-5">
-                    {section.bullets.map((bullet, bulletIndex) => (
-                      <li key={`${section.order}-bullet-${bulletIndex}`}>{bullet}</li>
-                    ))}
-                  </ul>
-                )}
+                <div 
+                  className="prose max-w-none break-words leading-relaxed text-black prose-p:my-2 prose-ul:list-disc prose-li:ml-4"
+                  dangerouslySetInnerHTML={{ __html: section.content }}
+                />
               </div>
             ))}
 
-            <div>
-              <h3 className="mb-2 text-lg font-bold">Contact Us</h3>
-              <p className="whitespace-pre-wrap break-words leading-relaxed">
-                {currentContactName || "Legal Team"}
-                {currentContactEmail ? ` (${currentContactEmail})` : ""}
+            <div className="mt-10 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+              <h3 className="mb-2 text-lg font-bold text-black italic">Contact Us</h3>
+              <p className="whitespace-pre-wrap break-words leading-relaxed text-gray-600">
+                {currentContactName || "Legal Team"} 
+                {currentContactEmail ? <span className="block text-[#4f795a] font-medium">{currentContactEmail}</span> : ""}
               </p>
             </div>
           </div>
         ) : (
-          <div className="space-y-4 text-gray-700">
+          <div className="space-y-8 text-black">
             {draftSections.map((section, index) => (
-              <div key={`section-edit-${index + 1}`} className="space-y-1.5">
-                <input
-                  type="text"
-                  value={section.title}
-                  onChange={(event) =>
-                    handleSectionTitleChange(index, event.target.value)
-                  }
-                  className="w-full appearance-none border-0 bg-transparent p-0 text-lg font-semibold text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
-                  placeholder={`Section ${index + 1} title`}
-                />
-                <textarea
-                  rows={2}
-                  value={section.content}
-                  onChange={(event) =>
-                    handleSectionContentChange(index, event.target.value)
-                  }
-                  className="w-full resize-none border-0 bg-transparent p-0 leading-relaxed text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
+              <div key={`section-edit-${index + 1}`} className="space-y-4 rounded-3xl border border-gray-100 p-6 bg-[#fcfcfc] shadow-sm">
+                 <div className="flex items-center gap-4 border-b border-gray-50 pb-2">
+                    <span className="text-xl font-black text-gray-200">{index + 1}</span>
+                    <input
+                      type="text"
+                      value={section.title}
+                      onChange={(event) =>
+                        handleSectionTitleChange(index, event.target.value)
+                      }
+                      className="w-full bg-transparent text-lg font-bold text-black outline-none placeholder:text-gray-300"
+                      placeholder={`Section ${index + 1} Title`}
+                    />
+                 </div>
+                
+                <div
+                  contentEditable
+                  onInput={(e) => handleSectionContentChange(index, e.currentTarget.innerHTML)}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData("text/plain");
+                    document.execCommand("insertText", false, text);
+                  }}
+                  className="min-h-[150px] w-full rounded-xl bg-white p-5 leading-relaxed text-black outline-none border border-gray-50 focus:border-[#4f795a] prose-ul:list-disc transition-all"
+                  dangerouslySetInnerHTML={{ __html: section.content }}
                 />
               </div>
             ))}
 
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold">Changelog</h3>
-              <textarea
-                rows={2}
-                value={draftChangelog}
-                onChange={(event) => setDraftChangelog(event.target.value)}
-                className="w-full resize-none border-0 bg-transparent p-0 leading-relaxed text-gray-700 outline-none ring-0 focus:outline-none focus:ring-0"
-              />
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+               <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Contact Person</label>
+                    <input 
+                      type="text"
+                      value={draftContactName}
+                      onChange={(e) => setDraftContactName(e.target.value)}
+                      className="w-full rounded-xl border border-gray-100 bg-white p-4 text-sm outline-none focus:border-[#4f795a]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-400">Contact Email</label>
+                    <input 
+                       type="text"
+                       value={draftContactEmail}
+                       onChange={(e) => setDraftContactEmail(e.target.value)}
+                       className="w-full rounded-xl border border-gray-100 bg-white p-4 text-sm outline-none focus:border-[#4f795a]"
+                    />
+                  </div>
+               </div>
+
+              <div className="space-y-2">
+                <h3 className="text-lg font-bold text-[#4f795a]">Changelog</h3>
+                <div
+                  contentEditable
+                  onInput={(e) => setDraftChangelog(e.currentTarget.innerHTML)}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData("text/plain");
+                    document.execCommand("insertText", false, text);
+                  }}
+                  className="min-h-[100px] w-full rounded-xl border border-gray-100 bg-[#fefefe] p-5 text-sm italic text-gray-700 outline-none focus:border-[#4f795a] transition-all"
+                  dangerouslySetInnerHTML={{ __html: draftChangelog }}
+                />
+              </div>
             </div>
           </div>
         )}
