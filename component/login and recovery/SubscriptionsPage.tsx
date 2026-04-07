@@ -405,6 +405,7 @@ function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) 
   };
 
   const handleAddFeature = () => {
+    if (formData.features.length >= 5) return;
     setFormData((prev) => ({ ...prev, features: [...prev.features, ""] }));
   };
 
@@ -489,10 +490,10 @@ function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) 
               <h3 className="text-sm text-gray-800">Features</h3>
               <button
                 onClick={handleAddFeature}
-                disabled={isSaving}
+                disabled={isSaving || formData.features.length >= 5}
                 className="flex items-center gap-2 rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#3d5e46] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                <Plus size={16} /> Add Feature
+                <Plus size={16} /> Add Feature {formData.features.length >= 5 && "(Max 5)"}
               </button>
             </div>
 
