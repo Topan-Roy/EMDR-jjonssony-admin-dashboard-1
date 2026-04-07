@@ -25,6 +25,12 @@ type ApiEnvelope<T> = {
   };
 };
 
+export type ChangePasswordRequest = {
+  currentPassword?: string;
+  newPassword?: string;
+  confirmPassword?: string;
+};
+
 export const adminProfileApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getAdminProfile: builder.query<AdminProfile, void>({
@@ -56,8 +62,15 @@ export const adminProfileApi = baseApi.injectEndpoints({
       transformResponse: (response: ApiEnvelope<AdminProfile>) => response.data,
       invalidatesTags: ["AdminProfile"],
     }),
+    changePassword: builder.mutation<{ success: boolean; message: string }, ChangePasswordRequest>({
+      query: (payload) => ({
+        url: "/api/profile/change-password",
+        method: "PATCH",
+        body: payload,
+      }),
+    }),
   }),
   overrideExisting: false,
 });
 
-export const { useGetAdminProfileQuery, useUpdateAdminProfileMutation } = adminProfileApi;
+export const { useGetAdminProfileQuery, useUpdateAdminProfileMutation, useChangePasswordMutation } = adminProfileApi;
