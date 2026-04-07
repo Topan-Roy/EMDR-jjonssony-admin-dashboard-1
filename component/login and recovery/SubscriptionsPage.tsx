@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Check, Edit3, Plus, Trash2, X, ChevronDown } from 'lucide-react';
+import type { SerializedError } from "@reduxjs/toolkit";
+import type { FetchBaseQueryError } from "@reduxjs/toolkit/query";
+import React, { useMemo, useState } from "react";
+import { Check, Edit3, Plus, Trash2, X, ChevronDown } from "lucide-react";
+import type { SubscriptionPlan } from "../redux/features/subscriptionsApi";
+import {
+  useGetSubscriptionPlansQuery,
+  useUpdateSubscriptionPlanMutation,
+} from "../redux/features/subscriptionsApi";
 
-// Types
 interface Plan {
   id: string;
   name: string;
@@ -11,174 +17,345 @@ interface Plan {
   period: string;
   tagline: string;
   features: string[];
+  visible: boolean;
+  currency: string;
   spots?: number;
   totalSpots?: number;
-  visible: boolean;
 }
 
-const initialPlans: Plan[] = [
-  {
-    id: '1',
-    name: 'Free',
-    price: '0',
-    period: '/6 months',
-    tagline: 'For those facing financial hardship',
-    features: ['Includes Prime Plan program', 'Limited availability'],
-    spots: 10,
-    totalSpots: 50,
-    visible: true
-  },
-  {
-    id: '2',
-    name: 'The Main Plan',
-    price: '45',
-    period: '/month',
-    tagline: 'Affordable entry to virtual EMDR therapy',
-    features: ['4 sessions/month', 'Get Started'],
-    visible: true
-  },
-  {
-    id: '3',
-    name: 'Prime Plan',
-    price: '75',
-    period: '/month',
-    tagline: 'Best value for consistent healing',
-    features: ['Includes homework', 'Progress tracking', 'Full program access'],
-    visible: true
-  },
-  {
-    id: '4',
-    name: 'Hero Plan',
-    price: '120',
-    period: '/month',
-    tagline: 'Support yourself and someone in need',
-    features: ['Funds 1 Community Access monthly', 'Full Prime Plan access'],
-    visible: true
-  },
-  {
-    id: '5',
-    name: 'Rockstar Plan',
-    price: '950',
-    period: '/month',
-    tagline: 'Unlimited care, generous giving',
-    features: ['Funds 2 community access plans', 'Unlimited care access'],
-    visible: true
+const getErrorMessage = (
+  error: FetchBaseQueryError | SerializedError | undefined,
+): string => {
+  if (!error) {
+    return "Request failed. Please try again.";
   }
-];
+
+  if ("data" in error) {
+    const data = error.data;
+
+    if (typeof data === "string" && data.trim().length > 0) {
+      return data;
+    }
+
+    if (data && typeof data === "object") {
+      const record = data as Record<string, unknown>;
+
+      if (
+        typeof record.message === "string" &&
+        record.message.trim().length > 0
+      ) {
+        return record.message;
+      }
+
+      if (record.data && typeof record.data === "object") {
+        const nestedData = record.data as Record<string, unknown>;
+
+        if (
+          typeof nestedData.message === "string" &&
+          nestedData.message.trim().length > 0
+        ) {
+          return nestedData.message;
+        }
+      }
+    }
+  }
+
+  if (
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.trim().length > 0
+  ) {
+    return error.message;
+  }
+
+  return "Request failed. Please try again.";
+};
+
+const normalizePeriod = (interval?: string): string => {
+  const value = (interval || "").trim().toLowerCase();
+
+  if (!value) {
+    return "/month";
+  }
+
+  if (value.includes("year")) {
+    return "/year";
+  }
+
+  if (value.includes("6") && value.includes("month")) {
+    return "/6 months";
+  }
+
+  if (value.includes("month")) {
+    return "/month";
+  }
+
+  return "/month";
+};
+
+const toIntervalValue = (period: string): string => {
+  if (period === "/year") {
+    return "yearly";
+  }
+
+  if (period === "/6 months") {
+    return "6 months";
+  }
+
+  return "monthly";
+};
+
+const mapApiPlanToUi = (plan: SubscriptionPlan): Plan => ({
+  id: plan._id,
+  name: plan.name,
+  price: String(plan.price ?? 0),
+  period: normalizePeriod(plan.interval),
+  tagline: plan.tagline || "",
+  features: Array.isArray(plan.features) ? plan.features : [],
+  visible: Boolean(plan.isActive),
+  currency: plan.currency || "\u00A3",
+});
+
+const buildPayloadFromPlan = (plan: Plan, isActive: boolean) => {
+  const parsedPrice = Number(plan.price);
+
+  return {
+    name: plan.name.trim(),
+    tagline: plan.tagline.trim(),
+    price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
+    interval: toIntervalValue(plan.period),
+    features: plan.features
+      .map((feature) => feature.trim())
+      .filter((feature) => feature.length > 0),
+    isActive,
+  };
+};
 
 export default function SubscriptionsPage() {
-  const [plans, setPlans] = useState<Plan[]>(initialPlans);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [pendingToggleIds, setPendingToggleIds] = useState<string[]>([]);
 
-  // Handle toggling visibility for a specific plan
-  const handleToggleVisibility = (id: string) => {
-    setPlans((prevPlans) =>
-      prevPlans.map((plan) =>
-        plan.id === id ? { ...plan, visible: !plan.visible } : plan
-      )
-    );
+  const {
+    data: subscriptionPlans,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useGetSubscriptionPlansQuery();
+  const [updateSubscriptionPlan, { isLoading: isSaving }] =
+    useUpdateSubscriptionPlanMutation();
+
+  const plans = useMemo(
+    () => (subscriptionPlans ?? []).map((plan) => mapApiPlanToUi(plan)),
+    [subscriptionPlans],
+  );
+
+  const handleToggleVisibility = async (plan: Plan) => {
+    if (pendingToggleIds.includes(plan.id)) {
+      return;
+    }
+
+    setSaveErrorMessage(null);
+    setPendingToggleIds((prev) => [...prev, plan.id]);
+
+    try {
+      await updateSubscriptionPlan({
+        id: plan.id,
+        payload: buildPayloadFromPlan(plan, !plan.visible),
+      }).unwrap();
+    } catch (saveError) {
+      setSaveErrorMessage(
+        getErrorMessage(saveError as FetchBaseQueryError | SerializedError),
+      );
+    } finally {
+      setPendingToggleIds((prev) => prev.filter((id) => id !== plan.id));
+    }
   };
 
-  // Handle opening the modal
   const handleEdit = (plan: Plan) => {
     setSelectedPlan(plan);
+    setSaveErrorMessage(null);
+    setStatusMessage(null);
     setIsModalOpen(true);
   };
 
-  // Handle saving changes from the modal
-  const handleSaveChanges = (updatedPlan: Plan) => {
-    setPlans((prevPlans) =>
-      prevPlans.map((plan) => (plan.id === updatedPlan.id ? updatedPlan : plan))
-    );
-    setIsModalOpen(false);
-    setSelectedPlan(null);
+  const handleSaveChanges = async (updatedPlan: Plan) => {
+    if (!updatedPlan.id) {
+      setSaveErrorMessage("Invalid subscription plan.");
+      return;
+    }
+
+    if (!updatedPlan.name.trim()) {
+      setSaveErrorMessage("Plan name is required.");
+      return;
+    }
+
+    const parsedPrice = Number(updatedPlan.price);
+
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      setSaveErrorMessage("Plan price must be a valid number.");
+      return;
+    }
+
+    setStatusMessage(null);
+    setSaveErrorMessage(null);
+
+    try {
+      await updateSubscriptionPlan({
+        id: updatedPlan.id,
+        payload: buildPayloadFromPlan(updatedPlan, updatedPlan.visible),
+      }).unwrap();
+
+      setStatusMessage(`${updatedPlan.name} updated successfully.`);
+      setIsModalOpen(false);
+      setSelectedPlan(null);
+    } catch (saveError) {
+      setSaveErrorMessage(
+        getErrorMessage(saveError as FetchBaseQueryError | SerializedError),
+      );
+    }
   };
 
   return (
-    <div className="space-y-6" style={{ fontFamily: 'Georgia, serif' }}>
-      {/* Header */}
+    <div className="space-y-6" style={{ fontFamily: "Georgia, serif" }}>
       <section>
         <h1 className="text-2xl font-bold text-gray-800">Subscription Plans</h1>
-        <p className="text-sm text-gray-500">Manage pricing tiers, features, and availability.</p>
+        <p className="text-sm text-gray-500">
+          Manage pricing tiers, features, and availability.
+        </p>
       </section>
 
-      {/* Plans Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      {statusMessage && (
+        <p className="rounded-md border border-emerald-300 bg-emerald-100/90 px-4 py-3 text-sm text-emerald-800">
+          {statusMessage}
+        </p>
+      )}
+
+      {saveErrorMessage && (
+        <p className="rounded-md border border-red-300 bg-red-100/90 px-4 py-3 text-sm text-red-700">
+          {saveErrorMessage}
+        </p>
+      )}
+
+      {isError && (
+        <div className="rounded-md border border-red-300 bg-red-100/90 px-4 py-3 text-sm text-red-700">
+          <p className="mb-3">
+            {getErrorMessage(error as FetchBaseQueryError | SerializedError)}
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="rounded-md bg-[#4f795a] px-3 py-1.5 text-xs text-white hover:bg-[#3d5e46]"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {isLoading && !isError && (
+        <p className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+          Loading subscription plans...
+        </p>
+      )}
+
+      {!isLoading && !isError && plans.length === 0 && (
+        <p className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+          No subscription plans found.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
         {plans.map((plan) => (
-          <div key={plan.id} className="bg-white p-6 rounded-[1.5rem] shadow-sm border border-gray-100 flex flex-col min-h-[550px]">
+          <div
+            key={plan.id}
+            className="flex min-h-[550px] flex-col rounded-[1.5rem] border border-gray-100 bg-white p-6 shadow-sm"
+          >
             <div className="flex-1">
-              <span className={`px-3 py-1 rounded-full text-[10px] font-bold border mb-4 inline-block uppercase ${
-                plan.visible 
-                  ? "bg-[#f4faf7] text-[#2db394] border-[#2db394]/10" 
-                  : "bg-gray-100 text-gray-500 border-gray-200"
-              }`}>
+              <span
+                className={`mb-4 inline-block rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${
+                  plan.visible
+                    ? "border-[#2db394]/10 bg-[#f4faf7] text-[#2db394]"
+                    : "border-gray-200 bg-gray-100 text-gray-500"
+                }`}
+              >
                 {plan.visible ? "Active" : "Inactive"}
               </span>
 
-              <h3 className="text-[16px] font-bold text-gray-800 mb-2">{plan.name}</h3>
+              <h3 className="mb-2 text-[16px] font-bold text-gray-800">{plan.name}</h3>
 
-              <div className="flex items-baseline mb-3">
-                <span className="text-[32px] font-bold text-gray-800">£{plan.price}</span>
-                <span className="text-[12px] text-gray-400 ml-1">{plan.period}</span>
+              <div className="mb-3 flex items-baseline">
+                <span className="text-[32px] font-bold text-gray-800">
+                  {plan.currency}
+                  {plan.price}
+                </span>
+                <span className="ml-1 text-[12px] text-gray-400">{plan.period}</span>
               </div>
 
-              <p className="text-[14px] text-[#4f795a] leading-relaxed mb-6 italic">
+              <p className="mb-6 text-[14px] italic leading-relaxed text-[#4f795a]">
                 {plan.tagline}
               </p>
 
-              {/* Progress Bar for Available Spots (Free Plan only) */}
               {plan.spots !== undefined && (
-                <div className="mb-6 bg-[#f9f9f9] p-4 rounded-xl border border-gray-50">
-                  <div className="flex justify-between text-[12px] font-bold text-gray-400 mb-2">
+                <div className="mb-6 rounded-xl border border-gray-50 bg-[#f9f9f9] p-4">
+                  <div className="mb-2 flex justify-between text-[12px] font-bold text-gray-400">
                     <span>Available Spots</span>
                     <span>{plan.totalSpots}</span>
                   </div>
-                  <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-                    <div className="bg-[#4f795a] h-full w-[25%] rounded-full opacity-80"></div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div className="h-full w-[25%] rounded-full bg-[#4f795a] opacity-80" />
                   </div>
                 </div>
               )}
 
-              {/* Features List */}
-              <ul className="space-y-4 mb-8">
+              <ul className="mb-8 space-y-4">
                 {plan.features.map((feature, idx) => (
-                  <li key={idx} className="flex gap-3 text-[14px] text-gray-600 leading-tight">
-                    <Check size={14} className="text-[#4f795a] flex-shrink-0 mt-1" />
+                  <li
+                    key={`${plan.id}-feature-${idx + 1}`}
+                    className="flex gap-3 text-[14px] leading-tight text-gray-600"
+                  >
+                    <Check size={14} className="mt-1 flex-shrink-0 text-[#4f795a]" />
                     {feature}
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* Bottom Controls */}
             <div className="mt-auto space-y-6">
               <div className="flex items-center justify-between">
-                <div className="">
-                  <p className="font-bold text-gray-800 text-[16px]">Plan Status</p>
-                  <p className="text-gray-400 text-[14px]">
+                <div>
+                  <p className="text-[16px] font-bold text-gray-800">Plan Status</p>
+                  <p className="text-[14px] text-gray-400">
                     {plan.visible ? "Visible to users" : "Hidden from users"}
                   </p>
                 </div>
 
-                {/* Toggle Switch */}
-                <div
-                  onClick={() => handleToggleVisibility(plan.id)}
-                  className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors duration-300 ${
+                <button
+                  type="button"
+                  onClick={() => void handleToggleVisibility(plan)}
+                  disabled={pendingToggleIds.includes(plan.id)}
+                  className={`relative h-5 w-10 rounded-full transition-colors duration-300 ${
                     plan.visible ? "bg-[#4f795a]" : "bg-gray-300"
+                  } ${
+                    pendingToggleIds.includes(plan.id)
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer"
                   }`}
                 >
-                  <div
-                    className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${
+                  <span
+                    className={`absolute top-1 h-3 w-3 rounded-full bg-white transition-all duration-300 ${
                       plan.visible ? "right-1" : "left-1"
                     }`}
-                  ></div>
-                </div>
+                  />
+                </button>
               </div>
 
               <button
                 onClick={() => handleEdit(plan)}
-                className="w-full py-3 border border-gray-100 rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors"
+                disabled={isSaving}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-100 py-3 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Edit3 size={16} /> Edit Plan
               </button>
@@ -187,59 +364,74 @@ export default function SubscriptionsPage() {
         ))}
       </div>
 
-      {/* Edit Modal */}
       {isModalOpen && selectedPlan && (
         <EditPlanModal
           plan={selectedPlan}
+          isSaving={isSaving}
           onSave={handleSaveChanges}
-          onClose={() => setIsModalOpen(false)}
+          onClose={() => {
+            if (!isSaving) {
+              setIsModalOpen(false);
+            }
+          }}
         />
       )}
     </div>
   );
 }
 
-// --- MODAL COMPONENT ---
-
 interface EditPlanModalProps {
   plan: Plan;
+  isSaving: boolean;
   onSave: (updatedPlan: Plan) => void;
   onClose: () => void;
 }
 
-function EditPlanModal({ plan, onSave, onClose }: EditPlanModalProps) {
+function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) {
   const [formData, setFormData] = useState<Plan>({ ...plan });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleFeatureChange = (index: number, value: string) => {
-    const newFeatures = [...formData.features];
-    newFeatures[index] = value;
-    setFormData(prev => ({ ...prev, features: newFeatures }));
+    const nextFeatures = [...formData.features];
+    nextFeatures[index] = value;
+
+    setFormData((prev) => ({ ...prev, features: nextFeatures }));
   };
 
   const handleAddFeature = () => {
-    setFormData(prev => ({ ...prev, features: [...prev.features, "New Feature"] }));
+    setFormData((prev) => ({ ...prev, features: [...prev.features, ""] }));
   };
 
   const handleDeleteFeature = (index: number) => {
-    const newFeatures = formData.features.filter((_, i) => i !== index);
-    setFormData(prev => ({ ...prev, features: newFeatures }));
+    const nextFeatures = formData.features.filter((_, featureIndex) => featureIndex !== index);
+    setFormData((prev) => ({ ...prev, features: nextFeatures }));
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" style={{ fontFamily: 'Georgia, serif' }}>
-      <div className="bg-white w-full max-w-[580px] rounded-3xl shadow-2xl p-8 relative animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-        <button onClick={onClose} className="absolute right-6 top-6 text-gray-400 hover:text-gray-600 z-10">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      style={{ fontFamily: "Georgia, serif" }}
+    >
+      <div className="relative flex max-h-[90vh] w-full max-w-[580px] flex-col rounded-3xl bg-white p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <button
+          onClick={onClose}
+          disabled={isSaving}
+          className="absolute right-6 top-6 z-10 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
           <X size={24} />
         </button>
 
-        <h2 className="text-xl font-bold text-gray-800 mb-8 flex-shrink-0">Edit {plan.name}</h2>
+        <h2 className="mb-8 flex-shrink-0 text-xl font-bold text-gray-800">
+          Edit {plan.name}
+        </h2>
 
-        <div className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+        <div className="custom-scrollbar space-y-6 overflow-y-auto pr-2">
           <div className="grid grid-cols-2 gap-4 text-gray-800">
             <div className="space-y-2">
               <label className="text-sm">Plan Name</label>
@@ -248,7 +440,7 @@ function EditPlanModal({ plan, onSave, onClose }: EditPlanModalProps) {
                 type="text"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full p-3 bg-white border border-gray-100 rounded-xl outline-none text-sm shadow-sm focus:border-[#4f795a]"
+                className="w-full rounded-xl border border-gray-100 bg-white p-3 text-sm shadow-sm outline-none focus:border-[#4f795a]"
               />
             </div>
             <div className="space-y-2">
@@ -258,17 +450,17 @@ function EditPlanModal({ plan, onSave, onClose }: EditPlanModalProps) {
                 type="text"
                 value={formData.tagline}
                 onChange={handleChange}
-                className="w-full p-3 bg-white border border-gray-100 rounded-xl outline-none text-sm shadow-sm focus:border-[#4f795a]"
+                className="w-full rounded-xl border border-gray-100 bg-white p-3 text-sm shadow-sm outline-none focus:border-[#4f795a]"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm">Plan Price (£)</label>
+              <label className="text-sm">Plan Price ({formData.currency || "\u00A3"})</label>
               <input
                 name="price"
                 type="text"
                 value={formData.price}
                 onChange={handleChange}
-                className="w-full p-3 bg-white border border-gray-100 rounded-xl outline-none text-sm shadow-sm focus:border-[#4f795a]"
+                className="w-full rounded-xl border border-gray-100 bg-white p-3 text-sm shadow-sm outline-none focus:border-[#4f795a]"
               />
             </div>
             <div className="space-y-2">
@@ -278,40 +470,48 @@ function EditPlanModal({ plan, onSave, onClose }: EditPlanModalProps) {
                   name="period"
                   value={formData.period}
                   onChange={handleChange}
-                  className="w-full p-3 bg-white border border-gray-100 rounded-xl text-sm outline-none appearance-none pr-10 focus:border-[#4f795a]"
+                  className="w-full appearance-none rounded-xl border border-gray-100 bg-white p-3 pr-10 text-sm outline-none focus:border-[#4f795a]"
                 >
                   <option value="/month">/month</option>
                   <option value="/year">/year</option>
                   <option value="/6 months">/6 months</option>
                 </select>
-                <ChevronDown className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={18} />
+                <ChevronDown
+                  className="pointer-events-none absolute right-3 top-3 text-gray-400"
+                  size={18}
+                />
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex items-center justify-between">
               <h3 className="text-sm text-gray-800">Features</h3>
               <button
                 onClick={handleAddFeature}
-                className="bg-[#4f795a] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#3d5e46] transition-colors"
+                disabled={isSaving}
+                className="flex items-center gap-2 rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#3d5e46] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <Plus size={16} /> Add Feature
               </button>
             </div>
 
             <div className="space-y-3">
-              {formData.features.map((feature, i) => (
-                <div key={i} className="flex items-center gap-3 animate-in fade-in slide-in-from-left-4 duration-300">
+              {formData.features.map((feature, index) => (
+                <div
+                  key={`feature-${index + 1}`}
+                  className="flex items-center gap-3 animate-in fade-in slide-in-from-left-4 duration-300"
+                >
                   <input
                     type="text"
                     value={feature}
-                    onChange={(e) => handleFeatureChange(i, e.target.value)}
-                    className="flex-1 p-3 bg-[#f9fbfa] border border-gray-100 rounded-xl text-sm text-gray-700 focus:border-[#4f795a] outline-none"
+                    onChange={(event) => handleFeatureChange(index, event.target.value)}
+                    className="flex-1 rounded-xl border border-gray-100 bg-[#f9fbfa] p-3 text-sm text-gray-700 outline-none focus:border-[#4f795a]"
                   />
                   <button
-                    onClick={() => handleDeleteFeature(i)}
-                    className="text-red-300 hover:text-red-500 p-2 transition-colors"
+                    onClick={() => handleDeleteFeature(index)}
+                    disabled={isSaving}
+                    className="p-2 text-red-300 transition-colors hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -321,18 +521,20 @@ function EditPlanModal({ plan, onSave, onClose }: EditPlanModalProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 pt-6 mt-auto flex-shrink-0 bg-white border-t border-gray-50">
+        <div className="mt-auto grid grid-cols-2 gap-4 border-t border-gray-50 bg-white pt-6">
           <button
             onClick={onClose}
-            className="py-3 bg-[#e9edf5] text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+            disabled={isSaving}
+            className="rounded-xl bg-[#e9edf5] py-3 font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-70"
           >
             Cancel
           </button>
           <button
             onClick={() => onSave(formData)}
-            className="py-3 bg-[#4f795a] text-white rounded-xl font-bold hover:bg-[#3d5e46] transition-colors"
+            disabled={isSaving}
+            className="rounded-xl bg-[#4f795a] py-3 font-bold text-white transition-colors hover:bg-[#3d5e46] disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Save Change
+            {isSaving ? "Saving..." : "Save Change"}
           </button>
         </div>
       </div>
