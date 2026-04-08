@@ -44,6 +44,8 @@ const getErrorMessage = (
     }
   }
 
+
+
   if (
     "message" in error &&
     typeof error.message === "string" &&
@@ -60,6 +62,8 @@ export default function SettingAboutUsPage() {
   const [draftOverview, setDraftOverview] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+
+
 
   const {
     data: aboutData,
@@ -233,7 +237,7 @@ export default function SettingAboutUsPage() {
 
         {!isEditing ? (
           <div className="space-y-6 text-gray-700">
-            <div 
+            <div
               className="prose max-w-none break-words leading-relaxed text-black prose-p:my-2 prose-ul:list-disc prose-li:ml-4"
               dangerouslySetInnerHTML={{ __html: currentOverview || "No About Us content found." }}
             />
