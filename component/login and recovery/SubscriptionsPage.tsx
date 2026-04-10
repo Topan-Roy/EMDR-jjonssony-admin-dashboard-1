@@ -145,6 +145,7 @@ export default function SubscriptionsPage() {
     error,
     refetch,
   } = useGetSubscriptionPlansQuery();
+  const [toggleSubscriptionPlan] = useUpdateSubscriptionPlanMutation();
   const [updateSubscriptionPlan, { isLoading: isSaving }] =
     useUpdateSubscriptionPlanMutation();
 
@@ -162,7 +163,7 @@ export default function SubscriptionsPage() {
     setPendingToggleIds((prev) => [...prev, plan.id]);
 
     try {
-      await updateSubscriptionPlan({
+      await toggleSubscriptionPlan({
         id: plan.id,
         payload: buildPayloadFromPlan(plan, !plan.visible),
       }).unwrap();
@@ -284,14 +285,18 @@ export default function SubscriptionsPage() {
                 {plan.visible ? "Active" : "Inactive"}
               </span>
 
-              <h3 className="mb-2 text-[16px] font-bold text-gray-800">{plan.name}</h3>
+              <h3 className="mb-2 text-[16px] font-bold text-gray-800">
+                {plan.name}
+              </h3>
 
               <div className="mb-3 flex items-baseline">
                 <span className="text-[32px] font-bold text-gray-800">
                   {plan.currency}
                   {plan.price}
                 </span>
-                <span className="ml-1 text-[12px] text-gray-400">{plan.period}</span>
+                <span className="ml-1 text-[12px] text-gray-400">
+                  {plan.period}
+                </span>
               </div>
 
               <p className="mb-6 text-[14px] italic leading-relaxed text-[#4f795a]">
@@ -316,7 +321,10 @@ export default function SubscriptionsPage() {
                     key={`${plan.id}-feature-${idx + 1}`}
                     className="flex gap-3 text-[14px] leading-tight text-gray-600"
                   >
-                    <Check size={14} className="mt-1 flex-shrink-0 text-[#4f795a]" />
+                    <Check
+                      size={14}
+                      className="mt-1 flex-shrink-0 text-[#4f795a]"
+                    />
                     {feature}
                   </li>
                 ))}
@@ -326,7 +334,9 @@ export default function SubscriptionsPage() {
             <div className="mt-auto space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[16px] font-bold text-gray-800">Plan Status</p>
+                  <p className="text-[16px] font-bold text-gray-800">
+                    Plan Status
+                  </p>
                   <p className="text-[14px] text-gray-400">
                     {plan.visible ? "Visible to users" : "Hidden from users"}
                   </p>
@@ -387,7 +397,12 @@ interface EditPlanModalProps {
   onClose: () => void;
 }
 
-function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) {
+function EditPlanModal({
+  plan,
+  isSaving,
+  onSave,
+  onClose,
+}: EditPlanModalProps) {
   const [formData, setFormData] = useState<Plan>({ ...plan });
 
   const handleChange = (
@@ -410,7 +425,9 @@ function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) 
   };
 
   const handleDeleteFeature = (index: number) => {
-    const nextFeatures = formData.features.filter((_, featureIndex) => featureIndex !== index);
+    const nextFeatures = formData.features.filter(
+      (_, featureIndex) => featureIndex !== index,
+    );
     setFormData((prev) => ({ ...prev, features: nextFeatures }));
   };
 
@@ -455,7 +472,9 @@ function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) 
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm">Plan Price ({formData.currency || "\u00A3"})</label>
+              <label className="text-sm">
+                Plan Price ({formData.currency || "\u00A3"})
+              </label>
               <input
                 name="price"
                 type="text"
@@ -493,7 +512,8 @@ function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) 
                 disabled={isSaving || formData.features.length >= 5}
                 className="flex items-center gap-2 rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#3d5e46] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                <Plus size={16} /> Add Feature {formData.features.length >= 5 && "(Max 5)"}
+                <Plus size={16} /> Add Feature{" "}
+                {formData.features.length >= 5 && "(Max 5)"}
               </button>
             </div>
 
@@ -506,7 +526,9 @@ function EditPlanModal({ plan, isSaving, onSave, onClose }: EditPlanModalProps) 
                   <input
                     type="text"
                     value={feature}
-                    onChange={(event) => handleFeatureChange(index, event.target.value)}
+                    onChange={(event) =>
+                      handleFeatureChange(index, event.target.value)
+                    }
                     className="flex-1 rounded-xl border border-gray-100 bg-[#f9fbfa] p-3 text-sm text-gray-700 outline-none focus:border-[#4f795a]"
                   />
                   <button
