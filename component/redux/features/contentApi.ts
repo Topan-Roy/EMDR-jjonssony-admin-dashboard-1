@@ -9,6 +9,7 @@ export type ContentCategory = {
 
 export type CreateMediaPayload = {
   image: File;
+  name: string;
   categoryId: string;
   status: "Active" | "Inactive";
 };
@@ -24,6 +25,7 @@ export type CreatedMedia = {
   categoryId: string;
   categoryName: string;
   categorySlug?: string;
+  name?: string;
   url: string;
   mediaType: string;
   originalName: string;
@@ -56,6 +58,7 @@ type UpdateMediaApiResponse = {
           slug?: string;
         };
     url?: string;
+    name?: string;
     mediaType?: string;
     originalName?: string;
     size?: number;
@@ -93,6 +96,7 @@ type CreateMediaApiResponse = {
           slug?: string;
         };
     url?: string;
+    name?: string;
     mediaType?: string;
     originalName?: string;
     size?: number;
@@ -115,10 +119,11 @@ type GetMediaApiResponse = {
         categoryName?: string;
         slug?: string;
       };
-      url?: string;
-      mediaType?: string;
-      originalName?: string;
-      size?: number;
+    url?: string;
+    name?: string;
+    mediaType?: string;
+    originalName?: string;
+    size?: number;
       status?: string;
       createdAt?: string;
       updatedAt?: string;
@@ -179,6 +184,7 @@ const normalizeCreatedMedia = (response: CreateMediaApiResponse): CreatedMedia =
       typeof nestedCategory?.slug === "string" && nestedCategory.slug.trim().length > 0
         ? nestedCategory.slug.trim()
         : undefined,
+    name: typeof media.name === "string" && media.name.trim().length > 0 ? media.name.trim() : undefined,
     url: typeof media.url === "string" ? media.url : "",
     mediaType: typeof media.mediaType === "string" ? media.mediaType : "image",
     originalName: typeof media.originalName === "string" ? media.originalName : "Uploaded file",
@@ -209,6 +215,7 @@ const normalizeMediaItem = (
       typeof nestedCategory.slug === "string" && nestedCategory.slug.trim().length > 0
         ? nestedCategory.slug.trim()
         : undefined,
+    name: typeof media.name === "string" && media.name.trim().length > 0 ? media.name.trim() : undefined,
     url: typeof media.url === "string" ? media.url : "",
     mediaType: typeof media.mediaType === "string" ? media.mediaType : "image",
     originalName: typeof media.originalName === "string" ? media.originalName : "Uploaded file",
@@ -250,6 +257,7 @@ export const contentApi = baseApi.injectEndpoints({
         const formData = new FormData();
 
         formData.append("image", payload.image);
+        formData.append("name", payload.name);
         formData.append("categoryId", payload.categoryId);
         formData.append("status", payload.status.toLowerCase());
 

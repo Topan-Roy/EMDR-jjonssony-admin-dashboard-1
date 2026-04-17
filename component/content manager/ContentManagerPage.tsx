@@ -103,7 +103,7 @@ export default function ContentManagerPage() {
       mediaList.map((media) => ({
         id: media.id,
         type: mapCategoryToTab(media.categoryName, media.categorySlug),
-        name: media.originalName,
+        name: media.name || media.originalName,
         category: media.categoryName,
         categoryId: media.categoryId,
         assignedTo: 'Uploaded Media',
@@ -448,7 +448,7 @@ interface UploadModalProps {
 function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
-    name: 'The Main Plan',
+    name: '',
     category: 'Background',
     categoryId: '',
     assignedTo: 'Session 1',
@@ -486,6 +486,11 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
       return;
     }
 
+    if (!formData.name.trim()) {
+      setSubmitError("Please enter a name.");
+      return;
+    }
+
     if (!resolvedCategoryId) {
       setSubmitError("Please select a category.");
       return;
@@ -496,6 +501,7 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
     try {
       const media = await createMedia({
         image: selectedFile,
+        name: formData.name.trim(),
         categoryId: resolvedCategoryId,
         status: formData.status,
       }).unwrap();
@@ -508,7 +514,7 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
             : media.mediaType === 'audio'
               ? 'Audio'
               : 'Images',
-        name: formData.name || media.originalName,
+        name: media.name || formData.name || media.originalName,
         category: media.categoryName || selectedCategory,
         categoryId: media.categoryId || resolvedCategoryId,
         assignedTo: formData.assignedTo,
@@ -588,6 +594,7 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
               type="text" 
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
+              placeholder="Enter content name"
               className="w-full px-4 py-3 bg-[#FCFCFD] border border-gray-100 rounded-lg text-gray-800 outline-none focus:border-[#6B8E76] focus:ring-1 focus:ring-[#6B8E76] transition-all  " 
             />
           </div>
