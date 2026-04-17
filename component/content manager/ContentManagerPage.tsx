@@ -1,15 +1,19 @@
 "use client";
 
-import React, { useState, useRef, ChangeEvent } from 'react';
+import type { SerializedError } from "@reduxjs/toolkit";
+import type { FetchBaseQueryError } from "@reduxjs/toolkit/query";
+import React, { useState, useRef, ChangeEvent, useMemo } from 'react';
 import { Upload, Eye, Trash2, Play, Music, X, Image as ImageIcon, ChevronDown, Calendar, FileText } from 'lucide-react';
+import { useCreateMediaMutation, useDeleteMediaMutation, useGetContentCategoriesQuery, useGetMediaListQuery, useUpdateMediaMutation } from '../redux/features/contentApi';
 
 type ContentType = 'Images' | 'Videos' | 'Audio';
 
 interface ContentItem {
-  id: number;
+  id: number | string;
   type: ContentType;
   name: string;
   category: string;
+  categoryId?: string;
   assignedTo: string;
   status: 'Active' | 'Inactive';
   preview: string;
@@ -17,73 +21,176 @@ interface ContentItem {
   size?: string;       // Added for detail view
 }
 
-// --- DEMO DATA ---
-const initialData: ContentItem[] = [
-  {
-    id: 1,
-    type: 'Images',
-    name: 'Calm Forest Background',
-    category: 'Background',
-    assignedTo: 'Session 1-3',
-    status: 'Active',
-    preview: '/image/image-1.png',
-    uploadDate: 'Nov 12, 2025',
-    size: '2.4 MB'
-  },
-  {
-    id: 2,
-    type: 'Videos',
-    name: 'Intro Animation',
-    category: 'Guide',
-    assignedTo: 'Onboarding',
-    status: 'Active',
-    preview: '/image/image-1.png',
-    uploadDate: 'Nov 10, 2025',
-    size: '14.5 MB'
-  },
-  {
-    id: 3,
-    type: 'Audio',
-    name: 'Soothing Rain',
-    category: 'Ambience',
-    assignedTo: 'Session 4',
-    status: 'Active',
-    preview: '/image/image-1.png',
-    uploadDate: 'Nov 08, 2025',
-    size: '4.2 MB'
-  },
-  {
-    id: 4,
-    type: 'Images',
-    name: 'Mountain View',
-    category: 'Thumbnail',
-    assignedTo: 'Roadmap 2',
-    status: 'Inactive',
-    preview: '/image/image-1.png',
-    uploadDate: 'Oct 25, 2025',
-    size: '1.8 MB'
+const getErrorMessage = (
+  error: FetchBaseQueryError | SerializedError | undefined,
+): string => {
+  if (!error) {
+    return "Request failed. Please try again.";
   }
-];
+
+  if ("data" in error) {
+    const data = error.data;
+
+    if (typeof data === "string" && data.trim().length > 0) {
+      return data;
+    }
+
+    if (data && typeof data === "object") {
+      const record = data as Record<string, unknown>;
+
+      if (typeof record.message === "string" && record.message.trim().length > 0) {
+        return record.message;
+      }
+    }
+  }
+
+  if ("message" in error && typeof error.message === "string" && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return "Request failed. Please try again.";
+};
+
+const IMAGE_CATEGORY_NAMES = new Set([
+  'bilateral stimulation img',
+  'create your journey img',
+]);
+
+const mapCategoryToTab = (categoryName: string, categorySlug?: string): ContentType => {
+  const normalizedSlug = (categorySlug || "").toLowerCase();
+  const normalizedName = categoryName.toLowerCase().trim();
+
+  if (
+    IMAGE_CATEGORY_NAMES.has(normalizedName) ||
+    normalizedSlug.includes('img') ||
+    normalizedName.includes(' img') ||
+    normalizedName.endsWith('image')
+  ) {
+    return 'Images';
+  }
+
+  if (normalizedSlug.includes('audio') || normalizedName.includes('audio')) {
+    return 'Audio';
+  }
+
+  if (normalizedSlug.includes('video') || normalizedName.includes('video')) {
+    return 'Videos';
+  }
+
+  return 'Images';
+};
 
 export default function ContentManagerPage() {
   const [activeTab, setActiveTab] = useState<ContentType>('Images');
-  const [contents, setContents] = useState<ContentItem[]>(initialData);
+  const [uploadedContents, setUploadedContents] = useState<ContentItem[]>([]);
+  const [deletedIds, setDeletedIds] = useState<Array<number | string>>([]);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, ContentItem['status']>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   
   // Modals State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null); // For View Modal
 
   const tabs: ContentType[] = ['Images', 'Videos', 'Audio'];
+  const { data: mediaList = [], refetch: refetchMediaList } = useGetMediaListQuery({ page: 1, limit: 20 });
+  const [deleteMedia] = useDeleteMediaMutation();
+  const [updateMedia] = useUpdateMediaMutation();
 
+  const apiContents = useMemo<ContentItem[]>(
+    () =>
+      mediaList.map((media) => ({
+        id: media.id,
+        type: mapCategoryToTab(media.categoryName, media.categorySlug),
+        name: media.originalName,
+        category: media.categoryName,
+        categoryId: media.categoryId,
+        assignedTo: 'Uploaded Media',
+        status: statusOverrides[media.id] || media.status,
+        preview: media.url || '/image/image-1.png',
+        uploadDate: media.createdAt
+          ? new Date(media.createdAt).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : undefined,
+        size: media.size ? (media.size / (1024 * 1024)).toFixed(1) + ' MB' : undefined,
+      })),
+    [mediaList, statusOverrides],
+  );
+
+  const contents = [...uploadedContents, ...apiContents].filter(
+    (item) => !deletedIds.includes(item.id),
+  );
   const filteredContent = contents.filter(item => item.type === activeTab);
 
-  const handleDelete = (id: number) => {
-    setContents(prev => prev.filter(item => item.id !== id));
+  const handleDelete = async (id: number | string) => {
+    setActionError(null);
+
+    if (typeof id !== 'string') {
+      setDeletedIds(prev => [...prev, id]);
+      return;
+    }
+
+    setDeletingId(id);
+
+    try {
+      await deleteMedia(id).unwrap();
+      setDeletedIds(prev => [...prev, id]);
+
+      if (selectedContent?.id === id) {
+        setSelectedContent(null);
+      }
+    } catch (error) {
+      setActionError(getErrorMessage(error as FetchBaseQueryError | SerializedError));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleUpload = (newItem: ContentItem) => {
-    setContents([newItem, ...contents]);
+    setUploadedContents(prev => [newItem, ...prev]);
     setIsUploadModalOpen(false);
+  };
+
+  const handleStatusUpdate = async (item: ContentItem, nextStatus: ContentItem['status']) => {
+    if (item.status === nextStatus) {
+      return;
+    }
+
+    if (typeof item.id !== 'string' || !item.categoryId) {
+      setUploadedContents((prev) =>
+        prev.map((content) =>
+          content.id === item.id ? { ...content, status: nextStatus } : content,
+        ),
+      );
+      setSelectedContent((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      return;
+    }
+
+    setActionError(null);
+    setUpdatingStatusId(item.id);
+
+    try {
+      await updateMedia({
+        mediaId: item.id,
+        categoryId: item.categoryId,
+        status: nextStatus,
+      }).unwrap();
+
+      setStatusOverrides((prev) => ({
+        ...prev,
+        [item.id]: nextStatus,
+      }));
+      setSelectedContent((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      await refetchMediaList();
+    } catch (error) {
+      setActionError(getErrorMessage(error as FetchBaseQueryError | SerializedError));
+    } finally {
+      setUpdatingStatusId(null);
+    }
   };
 
   return (
@@ -115,6 +222,12 @@ export default function ContentManagerPage() {
         ))}
       </div>
 
+      {actionError && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {actionError}
+        </p>
+      )}
+
       <div className="bg-white rounded-[2rem] p-4 shadow-sm border border-gray-50 overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -132,7 +245,11 @@ export default function ContentManagerPage() {
               filteredContent.map((item) => (
                 <tr key={item.id} className="text-gray-700   hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
-                    <div className="relative w-20 h-14 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center border border-gray-200 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedContent(item)}
+                      className="relative w-20 h-14 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center border border-gray-200 shadow-sm cursor-pointer"
+                    >
                       {item.type === 'Images' ? (
                          <img src={item.preview} alt="preview" className="w-full h-full object-cover" />
                       ) : item.type === 'Videos' ? (
@@ -144,7 +261,7 @@ export default function ContentManagerPage() {
                           <Music size={24} className="text-gray-400" />
                         </div>
                       )}
-                    </div>
+                    </button>
                   </td>
                   <td className="px-6 py-4 font-medium">{item.name}</td>
                   <td className="px-6 py-4 text-gray-500  ">{item.category}</td>
@@ -164,8 +281,9 @@ export default function ContentManagerPage() {
                         <Eye size={16} />
                       </button>
                       <button 
-                        onClick={() => handleDelete(item.id)}
-                        className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"
+                        onClick={() => void handleDelete(item.id)}
+                        disabled={deletingId === item.id}
+                        className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -217,20 +335,23 @@ export default function ContentManagerPage() {
                 {selectedContent.type === 'Images' ? (
                   <img src={selectedContent.preview} alt="Preview" className="w-full h-full object-contain" />
                 ) : selectedContent.type === 'Videos' ? (
-                  <div className="relative w-full h-full bg-black flex flex-col items-center justify-center gap-3">
-                    <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-                       <Play size={24} className="text-white fill-white ml-1" />
-                    </div>
-                    <p className="text-white/70 text-sm  ">Preview Video</p>
-                  </div>
+                  <video
+                    src={selectedContent.preview}
+                    controls
+                    autoPlay
+                    className="w-full h-full bg-black object-contain"
+                  />
                 ) : (
-                  <div className="flex flex-col items-center gap-4">
+                  <div className="flex flex-col items-center gap-4 w-full px-6">
                     <div className="w-16 h-16 rounded-full bg-[#E9ECF5] flex items-center justify-center">
                       <Music size={32} className="text-[#6B8E76]" />
                     </div>
-                    <div className="h-1 w-48 bg-gray-300 rounded-full overflow-hidden">
-                       <div className="h-full w-1/3 bg-[#6B8E76]"></div>
-                    </div>
+                    <audio
+                      src={selectedContent.preview}
+                      controls
+                      autoPlay
+                      className="w-full max-w-md"
+                    />
                   </div>
                 )}
               </div>
@@ -270,11 +391,28 @@ export default function ContentManagerPage() {
 
                   <div>
                     <p className="text-[#F59E0B] text-xs font-normal mb-1.5">Status</p>
-                    <span className={`inline-block px-3 py-1 rounded-[6px] text-[11px] font-bold shadow-sm bg-white ${
-                      selectedContent.status === 'Active' ? 'text-[#10B981]' : 'text-gray-400'
-                    }`}>
-                      {selectedContent.status}
-                    </span>
+                    <div className="relative">
+                      <select
+                        value={selectedContent.status}
+                        onChange={(event) =>
+                          void handleStatusUpdate(
+                            selectedContent,
+                            event.target.value as ContentItem['status'],
+                          )
+                        }
+                        disabled={updatingStatusId === selectedContent.id}
+                        className={`appearance-none rounded-[6px] bg-white px-3 py-1 pr-8 text-[11px] font-bold shadow-sm outline-none disabled:opacity-60 ${
+                          selectedContent.status === 'Active' ? 'text-[#10B981]' : 'text-gray-400'
+                        }`}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+                        size={14}
+                      />
+                    </div>
                   </div>
 
                 </div>
@@ -312,36 +450,80 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
   const [formData, setFormData] = useState({
     name: 'The Main Plan',
     category: 'Background',
+    categoryId: '',
     assignedTo: 'Session 1',
     status: 'Active' as 'Active' | 'Inactive'
   });
   
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: categoryData = [], isLoading: isCategoryLoading } = useGetContentCategoriesQuery();
+  const [createMedia, { isLoading: isSubmitting }] = useCreateMediaMutation();
+
+  const availableCategories = categoryData.filter((category) => category.isActive);
+  const selectedCategoryRecord =
+    availableCategories.find((category) => category.id === formData.categoryId) ||
+    availableCategories.find((category) => category.name === formData.category) ||
+    availableCategories[0] ||
+    null;
+  const resolvedCategoryId = formData.categoryId || selectedCategoryRecord?.id || '';
+  const selectedCategory = selectedCategoryRecord?.name || formData.category;
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
+      setSubmitError(null);
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
     }
   };
 
-  const handleSubmit = () => {
-    const newItem: ContentItem = {
-      id: Date.now(),
-      type: activeTab,
-      name: formData.name,
-      category: formData.category,
-      assignedTo: formData.assignedTo,
-      status: formData.status,
-      preview: previewUrl || '/image/image-1.png',
-      uploadDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      size: (selectedFile?.size ? (selectedFile.size / (1024*1024)).toFixed(1) + ' MB' : '1.2 MB')
-    };
+  const handleSubmit = async () => {
+    if (!selectedFile) {
+      setSubmitError("Please choose a file.");
+      return;
+    }
 
-    onUpload(newItem);
+    if (!resolvedCategoryId) {
+      setSubmitError("Please select a category.");
+      return;
+    }
+
+    setSubmitError(null);
+
+    try {
+      const media = await createMedia({
+        image: selectedFile,
+        categoryId: resolvedCategoryId,
+        status: formData.status,
+      }).unwrap();
+
+      const newItem: ContentItem = {
+        id: media.id || ((selectedFile.lastModified || 0) + (selectedFile.size || 0)),
+        type:
+          media.mediaType === 'video'
+            ? 'Videos'
+            : media.mediaType === 'audio'
+              ? 'Audio'
+              : 'Images',
+        name: formData.name || media.originalName,
+        category: media.categoryName || selectedCategory,
+        categoryId: media.categoryId || resolvedCategoryId,
+        assignedTo: formData.assignedTo,
+        status: media.status,
+        preview: media.url || previewUrl || '/image/image-1.png',
+        uploadDate: media.createdAt
+          ? new Date(media.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        size: media.size ? (media.size / (1024*1024)).toFixed(1) + ' MB' : '1.2 MB'
+      };
+
+      onUpload(newItem);
+    } catch (error) {
+      setSubmitError(getErrorMessage(error as FetchBaseQueryError | SerializedError));
+    }
   };
 
   return (
@@ -354,6 +536,12 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
             <X size={24} />
           </button>
         </div>
+
+        {submitError && (
+          <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {submitError}
+          </p>
+        )}
 
         <div className="flex gap-6 mb-8 items-start">
           <input 
@@ -408,13 +596,33 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
             <label className="text-[17px] text-gray-900  ">Category</label>
             <div className="relative">
               <select 
-                value={formData.category}
-                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                value={formData.categoryId || selectedCategoryRecord?.id || ''}
+                
+                onChange={(e) => {
+                  const nextCategory = availableCategories.find((category) => category.id === e.target.value);
+                  setFormData({
+                    ...formData,
+                    category: nextCategory?.name || formData.category,
+                    categoryId: e.target.value,
+                  });
+                }}
                 className="w-full px-4 py-3 bg-[#FCFCFD] border border-gray-100 rounded-lg text-gray-800 appearance-none outline-none focus:border-[#6B8E76]   cursor-pointer"
               >
-                <option>Background</option>
-                <option>Thumbnail</option>
-                <option>Guide</option>
+                {isCategoryLoading ? (
+                  <option value="">Loading categories...</option>
+                ) : availableCategories.length > 0 ? (
+                  availableCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="">Background</option>
+                    <option value="">Thumbnail</option>
+                    <option value="">Guide</option>
+                  </>
+                )}
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
             </div>
@@ -470,10 +678,11 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
             Cancel
           </button>
           <button 
-            onClick={handleSubmit}
-            className="flex-1 py-3 bg-[#6B8E76] text-white rounded-lg   text-lg hover:bg-[#5a7a63] transition-colors shadow-sm"
+            onClick={() => void handleSubmit()}
+            disabled={isSubmitting}
+            className="flex-1 py-3 bg-[#6B8E76] text-white rounded-lg   text-lg hover:bg-[#5a7a63] transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Save Change
+            {isSubmitting ? 'Saving...' : 'Save Change'}
           </button>
         </div>
 
