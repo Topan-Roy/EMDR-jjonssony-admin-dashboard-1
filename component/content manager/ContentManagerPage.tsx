@@ -51,34 +51,50 @@ const getErrorMessage = (
   return "Request failed. Please try again.";
 };
 
-const IMAGE_CATEGORY_NAMES = new Set([
-  'bilateral stimulation img',
-  'create your journey img',
-]);
+const IMAGE_CATEGORY_KEYWORDS = ['img', 'image', 'visual icon', 'icon'];
+const AUDIO_CATEGORY_KEYWORDS = ['audio', 'sound'];
+const VIDEO_CATEGORY_KEYWORDS = ['video'];
 
-const mapCategoryToTab = (categoryName: string, categorySlug?: string): ContentType => {
-  const normalizedSlug = (categorySlug || "").toLowerCase();
-  const normalizedName = categoryName.toLowerCase().trim();
+const normalizeLabel = (value?: string) => (value || '').toLowerCase().trim();
 
-  if (
-    IMAGE_CATEGORY_NAMES.has(normalizedName) ||
-    normalizedSlug.includes('img') ||
-    normalizedName.includes(' img') ||
-    normalizedName.endsWith('image')
-  ) {
-    return 'Images';
-  }
+const matchesKeyword = (value: string, keywords: string[]) =>
+  keywords.some((keyword) => value.includes(keyword));
 
-  if (normalizedSlug.includes('audio') || normalizedName.includes('audio')) {
+const mapMediaToTab = (
+  categoryName?: string,
+  categorySlug?: string,
+  mediaType?: string,
+): ContentType => {
+  const normalizedSlug = normalizeLabel(categorySlug);
+  const normalizedName = normalizeLabel(categoryName);
+  const normalizedMediaType = normalizeLabel(mediaType);
+  const categoryLabel = `${normalizedName} ${normalizedSlug}`.trim();
+
+  if (matchesKeyword(categoryLabel, AUDIO_CATEGORY_KEYWORDS)) {
     return 'Audio';
   }
 
-  if (normalizedSlug.includes('video') || normalizedName.includes('video')) {
+  if (matchesKeyword(categoryLabel, VIDEO_CATEGORY_KEYWORDS)) {
+    return 'Videos';
+  }
+
+  if (matchesKeyword(categoryLabel, IMAGE_CATEGORY_KEYWORDS)) {
+    return 'Images';
+  }
+
+  if (normalizedMediaType === 'audio') {
+    return 'Audio';
+  }
+
+  if (normalizedMediaType === 'video') {
     return 'Videos';
   }
 
   return 'Images';
 };
+
+const getAcceptByTab = (tab: ContentType) =>
+  tab === 'Images' ? 'image/*' : tab === 'Videos' ? 'video/*' : 'audio/*';
 
 export default function ContentManagerPage() {
   const [activeTab, setActiveTab] = useState<ContentType>('Images');
@@ -102,7 +118,7 @@ export default function ContentManagerPage() {
     () =>
       mediaList.map((media) => ({
         id: media.id,
-        type: mapCategoryToTab(media.categoryName, media.categorySlug),
+        type: mapMediaToTab(media.categoryName, media.categorySlug, media.mediaType),
         name: media.name || media.originalName,
         category: media.categoryName,
         categoryId: media.categoryId,
@@ -449,7 +465,6 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     name: '',
-    category: 'Background',
     categoryId: '',
     assignedTo: 'Session 1',
     status: 'Active' as 'Active' | 'Inactive'
@@ -461,14 +476,17 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
   const { data: categoryData = [], isLoading: isCategoryLoading } = useGetContentCategoriesQuery();
   const [createMedia, { isLoading: isSubmitting }] = useCreateMediaMutation();
 
-  const availableCategories = categoryData.filter((category) => category.isActive);
+  const availableCategories = useMemo(
+    () => categoryData.filter((category) => category.isActive),
+    [categoryData],
+  );
+
   const selectedCategoryRecord =
     availableCategories.find((category) => category.id === formData.categoryId) ||
-    availableCategories.find((category) => category.name === formData.category) ||
     availableCategories[0] ||
     null;
-  const resolvedCategoryId = formData.categoryId || selectedCategoryRecord?.id || '';
-  const selectedCategory = selectedCategoryRecord?.name || formData.category;
+  const resolvedCategoryId = selectedCategoryRecord?.id || '';
+  const selectedCategory = selectedCategoryRecord?.name || '';
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -508,12 +526,7 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
 
       const newItem: ContentItem = {
         id: media.id || ((selectedFile.lastModified || 0) + (selectedFile.size || 0)),
-        type:
-          media.mediaType === 'video'
-            ? 'Videos'
-            : media.mediaType === 'audio'
-              ? 'Audio'
-              : 'Images',
+        type: mapMediaToTab(media.categoryName || selectedCategory, media.categorySlug, media.mediaType),
         name: media.name || formData.name || media.originalName,
         category: media.categoryName || selectedCategory,
         categoryId: media.categoryId || resolvedCategoryId,
@@ -555,15 +568,23 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
             ref={fileInputRef} 
             onChange={handleFileChange} 
             className="hidden" 
-            accept={activeTab === 'Images' ? "image/*" : activeTab === 'Videos' ? "video/*" : "audio/*"}
+            accept={getAcceptByTab(activeTab)}
           />
           
           <div 
             onClick={() => fileInputRef.current?.click()}
             className="w-28 h-28 bg-[#E9ECF5] rounded-lg flex items-center justify-center cursor-pointer flex-shrink-0 hover:opacity-90 transition-opacity overflow-hidden"
           >
-            {previewUrl ? (
+            {previewUrl && activeTab === 'Images' ? (
               <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+            ) : previewUrl && activeTab === 'Videos' ? (
+              <div className="flex h-full w-full items-center justify-center bg-black">
+                <Play size={30} className="text-white fill-white" />
+              </div>
+            ) : previewUrl && activeTab === 'Audio' ? (
+              <div className="flex h-full w-full items-center justify-center bg-white">
+                <Music size={30} className="text-[#6B8E76]" />
+              </div>
             ) : (
               <ImageIcon size={40} className="text-[#BCC3D7]" strokeWidth={1.5} />
             )}
@@ -571,7 +592,11 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
 
           <div className="pt-2">
             <p className="text-[15px] text-gray-800 mb-4  ">
-              SVG, PNG, JPG, MP4 or MP3 (max. 10MB)
+              {activeTab === 'Images'
+                ? 'SVG, PNG or JPG (max. 10MB)'
+                : activeTab === 'Videos'
+                  ? 'MP4 or supported video file (max. 10MB)'
+                  : 'MP3, WAV or supported audio file (max. 10MB)'}
             </p>
             <div className="flex items-center gap-4">
               <button 
@@ -603,15 +628,12 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
             <label className="text-[17px] text-gray-900  ">Category</label>
             <div className="relative">
               <select 
-                value={formData.categoryId || selectedCategoryRecord?.id || ''}
-                
+                value={resolvedCategoryId}
                 onChange={(e) => {
-                  const nextCategory = availableCategories.find((category) => category.id === e.target.value);
-                  setFormData({
-                    ...formData,
-                    category: nextCategory?.name || formData.category,
+                  setFormData((prev) => ({
+                    ...prev,
                     categoryId: e.target.value,
-                  });
+                  }));
                 }}
                 className="w-full px-4 py-3 bg-[#FCFCFD] border border-gray-100 rounded-lg text-gray-800 appearance-none outline-none focus:border-[#6B8E76]   cursor-pointer"
               >
@@ -624,11 +646,7 @@ function UploadModal({ onClose, onUpload, activeTab }: UploadModalProps) {
                     </option>
                   ))
                 ) : (
-                  <>
-                    <option value="">Background</option>
-                    <option value="">Thumbnail</option>
-                    <option value="">Guide</option>
-                  </>
+                  <option value="">No categories available for {activeTab}</option>
                 )}
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
