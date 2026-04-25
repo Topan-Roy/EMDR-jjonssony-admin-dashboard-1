@@ -5,51 +5,18 @@ import Link from "next/link";
 import { Eye, TrendingUp, X } from "lucide-react";
 import StatsGrid from "./StatsGrid";
 import { useGetDashboardQuery } from "../redux/features/dashboardApi";
+import type { AdminUserListItem } from "../redux/features/usersApi";
+import {
+  useGetAdminUsersQuery,
+  useLazyGetAdminUserByIdQuery,
+  useUpdateAdminUserStatusMutation,
+} from "../redux/features/usersApi";
 
-// Mock data
-const dashboardUsers = [
-  {
-    id: "User-213",
-    name: "User1",
-    email: "user1@example.com",
-    plan: "Rockstar Plan",
-    subPlan: "Rockstar",
-    type: "ABCD",
-    progress: 80,
-    status: "Active",
-    joined: "Nov 13, 2025",
-    lastActive: "Nov 13, 2025",
-    sessions: 12
-  },
-  {
-    id: "User-214",
-    name: "User2",
-    email: "user2@example.com",
-    plan: "Hero Plan",
-    subPlan: "Hero",
-    type: "EFGH",
-    progress: 45,
-    status: "Suspended",
-    joined: "Oct 10, 2025",
-    lastActive: "Jan 10, 2026",
-    sessions: 8
-  },
-  {
-    id: "User-215",
-    name: "User3",
-    email: "user3@example.com",
-    plan: "Main Plan",
-    subPlan: "Prime",
-    type: "IJKL",
-    progress: 92,
-    status: "Active",
-    joined: "Dec 01, 2026",
-    lastActive: "Now",
-    sessions: 24
-  }
+const DASHBOARD_USERS_LIMIT = 5;
+const STATUS_OPTIONS = [
+  { label: "Active", value: "active" },
+  { label: "Suspended", value: "suspended" },
 ];
-
-type DashboardUser = (typeof dashboardUsers)[number];
 
 const getErrorMessage = (error: unknown): string => {
   if (!error || typeof error !== "object") {
@@ -94,13 +61,90 @@ const formatCurrencyValue = (amount?: number, currency = "") => {
 const readText = (value?: string, fallback = "0%") =>
   typeof value === "string" && value.trim().length > 0 ? value : fallback;
 
+const formatStatus = (status: string) => {
+  if (!status.trim()) {
+    return "Unknown";
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+};
+
+const getStatusClasses = (status: string) => {
+  const normalizedStatus = status.trim().toLowerCase();
+
+  return normalizedStatus === "active"
+    ? "bg-[#f4faf7] text-[#2db394] border-[#2db394]/10"
+    : "bg-[#fff5f5] text-[#f25c5c] border-[#f25c5c]/10";
+};
+
+const parseProgress = (value: string) => {
+  const match = value.match(/(\d+(\.\d+)?)/);
+
+  if (!match) {
+    return 0;
+  }
+
+  const progress = Number(match[1]);
+
+  if (!Number.isFinite(progress)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(progress, 0), 100);
+};
+
+const formatDate = (value: string) => {
+  if (!value) {
+    return "N/A";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
 export default function DashboardPage() {
-  const [selectedUser, setSelectedUser] = useState<DashboardUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUserListItem | null>(null);
+  const [nextStatus, setNextStatus] = useState("active");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusErrorMessage, setStatusErrorMessage] = useState<string | null>(null);
   const { data, isLoading, isFetching, isError, error, refetch } = useGetDashboardQuery();
+  const {
+    data: usersResponse,
+    isLoading: isUsersLoading,
+    isFetching: isUsersFetching,
+    isError: isUsersError,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useGetAdminUsersQuery({
+    page: 1,
+    limit: DASHBOARD_USERS_LIMIT,
+    search: "",
+  });
+  const [
+    fetchUserDetails,
+    {
+      data: selectedUserDetails,
+      isFetching: isFetchingSelectedUser,
+      isError: isSelectedUserError,
+      error: selectedUserError,
+    },
+  ] = useLazyGetAdminUserByIdQuery();
+  const [updateAdminUserStatus, { isLoading: isUpdatingStatus }] =
+    useUpdateAdminUserStatusMutation();
 
   const overview = data?.overview;
   const revenue = data?.revenue;
   const subscriptionDistribution = data?.subscriptionDistribution ?? [];
+  const dashboardUsers = usersResponse?.users ?? [];
   const totalUsersCount = overview?.totalUsers?.count ?? 0;
   const distributionBase =
     totalUsersCount > 0
@@ -115,6 +159,51 @@ export default function DashboardPage() {
     const width = (userCount / distributionBase) * 100;
     return Math.min(Math.max(width, userCount > 0 ? 8 : 0), 100);
   };
+
+  const handleViewUser = (user: AdminUserListItem) => {
+    setSelectedUser(user);
+    setNextStatus(user.status || "active");
+    setStatusMessage(null);
+    setStatusErrorMessage(null);
+    void fetchUserDetails(user.id);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedUser(null);
+    setStatusMessage(null);
+    setStatusErrorMessage(null);
+  };
+
+  const handleSaveStatus = async () => {
+    if (!selectedUser) {
+      return;
+    }
+
+    setStatusMessage(null);
+    setStatusErrorMessage(null);
+
+    try {
+      const response = await updateAdminUserStatus({
+        userId: selectedUser.id,
+        status: nextStatus,
+      }).unwrap();
+
+      setSelectedUser((currentUser) =>
+        currentUser ? { ...currentUser, status: response.status } : currentUser,
+      );
+      setNextStatus(response.status);
+      setStatusMessage(`User status updated to ${formatStatus(response.status)}.`);
+      void refetchUsers();
+      void fetchUserDetails(selectedUser.id);
+    } catch (updateError) {
+      setStatusErrorMessage(getErrorMessage(updateError));
+    }
+  };
+
+  const modalProgress = parseProgress(
+    selectedUserDetails?.overallProgress ?? selectedUser?.sessionProgress ?? "0%",
+  );
+  const modalStatus = formatStatus(selectedUserDetails?.status ?? selectedUser?.status ?? "");
 
   return (
     <>
@@ -201,6 +290,21 @@ export default function DashboardPage() {
             View all
           </Link>
         </div>
+
+        {isUsersError && (
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>{getErrorMessage(usersError)}</p>
+              <button
+                type="button"
+                onClick={() => void refetchUsers()}
+                className="rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#3d5e46]"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
         
         <div className="overflow-x-auto">
           <table className="w-full border-separate border-spacing-y-4">
@@ -216,39 +320,63 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {dashboardUsers.map((user) => (
-                <tr key={user.id} className="text-sm  ">
-                  <td className="px-6 py-4 text-gray-500">{user.name}</td>
-                  <td className="px-6 py-4 text-gray-500  ">{user.email}</td>
-                  <td className="px-6 py-4">
-                    <span className="px-4 py-1.5 border border-[#4f795a]/20 text-[#2db394] rounded-lg">
-                      {user.plan}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-600">{user.type}</td>
-                  <td className="px-6 py-4">
-                    <div className="w-32">
-                      <span className="text-[10px] font-bold   block mb-1 text-gray-800">{user.progress}%</span>
-                      <div className="w-full bg-[#cbd5cc] h-2 rounded-full">
-                        <div className="bg-[#4f795a] h-full rounded-full" style={{ width: `${user.progress}%` }}></div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-5 py-1 rounded-xl border ${user.status === 'Active' ? 'bg-[#f4faf7] text-[#2db394]' : 'bg-[#fff5f5] text-[#f25c5c]'}`}>
-                      {user.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <button 
-                      onClick={() => setSelectedUser(user)}
-                      className="flex items-center gap-2 text-[#4f795a] hover:opacity-70"
-                    >
-                      <Eye size={16} /> View
-                    </button>
+              {isUsersLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500">
+                    Loading users...
                   </td>
                 </tr>
-              ))}
+              ) : dashboardUsers.length > 0 ? (
+                dashboardUsers.map((user) => {
+                  const progress = parseProgress(user.sessionProgress);
+
+                  return (
+                    <tr key={user.id} className="text-sm">
+                      <td className="px-6 py-4 text-gray-500">{user.userName || "N/A"}</td>
+                      <td className="px-6 py-4 text-gray-500">{user.email || "N/A"}</td>
+                      <td className="px-6 py-4">
+                        <span className="px-4 py-1.5 border border-[#4f795a]/20 text-[#2db394] rounded-lg">
+                          {user.subscription || "N/A"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">{user.roadmapType || "N/A"}</td>
+                      <td className="px-6 py-4">
+                        <div className="w-32">
+                          <span className="text-[10px] font-bold block mb-1 text-gray-800">
+                            {user.sessionProgress || "0%"}
+                          </span>
+                          <div className="w-full bg-[#cbd5cc] h-2 rounded-full">
+                            <div
+                              className="bg-[#4f795a] h-full rounded-full"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-5 py-1 rounded-xl border ${getStatusClasses(user.status)}`}>
+                          {formatStatus(user.status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          type="button"
+                          onClick={() => handleViewUser(user)}
+                          className="flex items-center gap-2 text-[#4f795a] hover:opacity-70"
+                        >
+                          <Eye size={16} /> View
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500">
+                    {isUsersFetching ? "Refreshing users..." : "No users found."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -262,7 +390,7 @@ export default function DashboardPage() {
             {/* Modal Header */}
             <div className="flex justify-between items-center px-8 py-6">
               <h2 className="text-xl font-bold text-gray-800">User Details</h2>
-              <button onClick={() => setSelectedUser(null)} className="text-gray-300 hover:text-gray-600 transition-colors">
+              <button type="button" onClick={handleCloseModal} className="text-gray-300 hover:text-gray-600 transition-colors">
                 <X size={24} />
               </button>
             </div>
@@ -270,66 +398,134 @@ export default function DashboardPage() {
             {/* Modal Content - Cream Card */}
             <div className="px-8 pb-8">
               <div className="bg-[#fff9f2] rounded-2xl p-8 space-y-8">
-                
-                {/* Data Grid */}
-                <div className="grid grid-cols-2 gap-y-8 gap-x-8">
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">User ID</p>
-                    <p className="text-gray-700 font-medium">{selectedUser.id}</p>
+                {statusMessage && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {statusMessage}
                   </div>
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">Email</p>
-                    <p className="text-gray-800  ">{selectedUser.email}</p>
-                  </div>
+                )}
 
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">Roadmap Type</p>
-                    <p className="text-gray-700 font-medium">{selectedUser.type}</p>
+                {statusErrorMessage && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {statusErrorMessage}
                   </div>
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">Sessions Completed</p>
-                    <p className="text-gray-700 font-medium">{selectedUser.sessions}</p>
-                  </div>
+                )}
 
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">Subscription Plan</p>
-                    <p className="text-gray-700 font-medium">{selectedUser.plan}</p>
+                {isFetchingSelectedUser && !selectedUserDetails ? (
+                  <div className="py-10 text-center text-sm text-gray-500">
+                    Loading user details...
                   </div>
-                  <div>
-                    <p className="text-[#eab308]/80 text-sm mb-1">Status</p>
-                    <span className={`inline-block px-4 py-1 rounded-lg text-xs font-bold border bg-white ${selectedUser.status === 'Active' ? 'text-[#2db394] border-gray-100' : 'text-red-500 border-red-100'}`}>
-                      {selectedUser.status}
-                    </span>
+                ) : isSelectedUserError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+                    <p>{getErrorMessage(selectedUserError)}</p>
+                    <button
+                      type="button"
+                      onClick={() => void fetchUserDetails(selectedUser.id)}
+                      className="mt-3 rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#3d5e46]"
+                    >
+                      Retry
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-y-8 gap-x-8">
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">User ID</p>
+                        <p className="text-gray-700 font-medium">
+                          {selectedUserDetails?.userId || selectedUser.id}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">Email</p>
+                        <p className="text-gray-800">{selectedUserDetails?.email || selectedUser.email}</p>
+                      </div>
 
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">Joined Date</p>
-                    <p className="text-gray-700 font-medium">{selectedUser.joined}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400 text-sm mb-1">Last Active</p>
-                    <p className="text-gray-700 font-medium">{selectedUser.lastActive}</p>
-                  </div>
-                </div>
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">Roadmap Type</p>
+                        <p className="text-gray-700 font-medium">
+                          {selectedUserDetails?.roadmapType || selectedUser.roadmapType || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">Sessions Completed</p>
+                        <p className="text-gray-700 font-medium">
+                          {selectedUserDetails?.sessionsCompleted ?? 0}
+                        </p>
+                      </div>
 
-                {/* Progress Bar Section */}
-                <div>
-                  <p className="  text-gray-800 mb-3">Overall Progress</p>
-                  <div className="relative w-full bg-[#dce6e0] h-7 rounded-full overflow-hidden flex items-center px-1">
-                    <div 
-                      className="bg-[#4f795a] h-5 rounded-full" 
-                      style={{ width: `${selectedUser.progress}%` }}
-                    ></div>
-                    <span className="ml-3 text-xs font-bold text-gray-700 z-10">{selectedUser.progress}%</span>
-                  </div>
-                </div>
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">Subscription Plan</p>
+                        <p className="text-gray-700 font-medium">
+                          {selectedUserDetails?.subscriptionPlan || selectedUser.subscription || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[#eab308]/80 text-sm mb-1">Status</p>
+                        <div className="space-y-2">
+                          <select
+                            value={nextStatus}
+                            onChange={(event) => setNextStatus(event.target.value)}
+                            disabled={isUpdatingStatus}
+                            className="w-full rounded-lg border border-[#E5DED2] bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none transition-colors focus:border-[#4f795a]"
+                          >
+                            {STATUS_OPTIONS.map((status) => (
+                              <option key={status.value} value={status.value}>
+                                {status.label}
+                              </option>
+                            ))}
+                          </select>
+                          {/* <span
+                            className={`inline-block px-4 py-1 rounded-lg text-xs font-bold border bg-white ${getStatusClasses(
+                              selectedUserDetails?.status || selectedUser.status,
+                            )}`}
+                          >
+                            Current: {modalStatus}
+                          </span> */}
+                        </div>
+                      </div>
 
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">Joined Date</p>
+                        <p className="text-gray-700 font-medium">
+                          {formatDate(selectedUserDetails?.joinedDate || selectedUser.joinedDate)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-sm mb-1">Last Active</p>
+                        <p className="text-gray-700 font-medium">
+                          {formatDate(selectedUserDetails?.lastActive || selectedUser.joinedDate)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-gray-800 mb-3">Overall Progress</p>
+                      <div className="relative w-full bg-[#dce6e0] h-7 rounded-full overflow-hidden flex items-center px-1">
+                        <div
+                          className="bg-[#4f795a] h-5 rounded-full"
+                          style={{ width: `${modalProgress}%` }}
+                        />
+                        <span className="ml-3 text-xs font-bold text-gray-700 z-10">
+                          {selectedUserDetails?.overallProgress || selectedUser.sessionProgress || "0%"}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Close Button */}
-              <div className="flex justify-end mt-6">
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveStatus()}
+                  disabled={isUpdatingStatus || nextStatus === (selectedUserDetails?.status || selectedUser.status)}
+                  className="bg-[#4f795a] text-white px-8 py-2.5 rounded-lg font-medium hover:bg-[#3d5e46] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isUpdatingStatus ? "Saving..." : "Save Status"}
+                </button>
                 <button 
-                  onClick={() => setSelectedUser(null)}
+                  type="button"
+                  onClick={handleCloseModal}
                   className="bg-[#347B76] text-white px-8 py-2.5 rounded-lg font-medium hover:bg-[#2a625e] transition-colors"
                 >
                   Close

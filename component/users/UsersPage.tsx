@@ -6,9 +6,14 @@ import type { AdminUserListItem } from "../redux/features/usersApi";
 import {
   useGetAdminUsersQuery,
   useLazyGetAdminUserByIdQuery,
+  useUpdateAdminUserStatusMutation,
 } from "../redux/features/usersApi";
 
 const USERS_PER_PAGE = 10;
+const STATUS_OPTIONS = [
+  { label: "Active", value: "active" },
+  { label: "Suspended", value: "suspended" },
+];
 
 const getErrorMessage = (error: unknown): string => {
   if (!error || typeof error !== "object") {
@@ -96,6 +101,9 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUserListItem | null>(null);
+  const [nextStatus, setNextStatus] = useState("active");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusErrorMessage, setStatusErrorMessage] = useState<string | null>(null);
   const deferredSearchTerm = useDeferredValue(searchTerm);
 
   const {
@@ -120,6 +128,8 @@ export default function UsersPage() {
       error: selectedUserError,
     },
   ] = useLazyGetAdminUserByIdQuery();
+  const [updateAdminUserStatus, { isLoading: isUpdatingStatus }] =
+    useUpdateAdminUserStatusMutation();
 
   const users = data?.users ?? [];
   const pagination = data?.pagination;
@@ -132,11 +142,42 @@ export default function UsersPage() {
 
   const handleViewUser = (user: AdminUserListItem) => {
     setSelectedUser(user);
+    setNextStatus(user.status || "active");
+    setStatusMessage(null);
+    setStatusErrorMessage(null);
     void fetchUserDetails(user.id);
   };
 
   const handleCloseModal = () => {
     setSelectedUser(null);
+    setStatusMessage(null);
+    setStatusErrorMessage(null);
+  };
+
+  const handleSaveStatus = async () => {
+    if (!selectedUser) {
+      return;
+    }
+
+    setStatusMessage(null);
+    setStatusErrorMessage(null);
+
+    try {
+      const response = await updateAdminUserStatus({
+        userId: selectedUser.id,
+        status: nextStatus,
+      }).unwrap();
+
+      setSelectedUser((currentUser) =>
+        currentUser ? { ...currentUser, status: response.status } : currentUser,
+      );
+      setNextStatus(response.status);
+      setStatusMessage(`User status updated to ${formatStatus(response.status)}.`);
+      void refetch();
+      void fetchUserDetails(selectedUser.id);
+    } catch (updateError) {
+      setStatusErrorMessage(getErrorMessage(updateError));
+    }
   };
 
   const modalProgress = parseProgress(selectedUserDetails?.overallProgress ?? selectedUser?.sessionProgress ?? "0%");
@@ -312,6 +353,18 @@ export default function UsersPage() {
 
             <div className="px-8 pb-8">
               <div className="bg-[#fff9f2] rounded-2xl p-8 space-y-8">
+                {statusMessage && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {statusMessage}
+                  </div>
+                )}
+
+                {statusErrorMessage && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {statusErrorMessage}
+                  </div>
+                )}
+
                 {isFetchingSelectedUser && !selectedUserDetails ? (
                   <div className="py-10 text-center text-sm text-gray-500">
                     Loading user details...
@@ -364,13 +417,27 @@ export default function UsersPage() {
                       </div>
                       <div>
                         <p className="text-[#eab308]/80 text-sm mb-1">Status</p>
-                        <span
-                          className={`inline-block px-4 py-1 rounded-lg text-xs font-bold border bg-white ${getStatusClasses(
-                            selectedUserDetails?.status || selectedUser.status,
-                          )}`}
-                        >
-                          {modalStatus}
-                        </span>
+                        <div className="space-y-2">
+                          <select
+                            value={nextStatus}
+                            onChange={(event) => setNextStatus(event.target.value)}
+                            disabled={isUpdatingStatus}
+                            className="w-full rounded-lg border border-[#E5DED2] bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none transition-colors focus:border-[#4f795a]"
+                          >
+                            {STATUS_OPTIONS.map((status) => (
+                              <option key={status.value} value={status.value}>
+                                {status.label}
+                              </option>
+                            ))}
+                          </select>
+                          {/* <span
+                            className={`inline-block px-4 py-1 rounded-lg text-xs font-bold border bg-white ${getStatusClasses(
+                              selectedUserDetails?.status || selectedUser.status,
+                            )}`}
+                          >
+                            Current: {modalStatus}
+                          </span> */}
+                        </div>
                       </div>
 
                       <div>
@@ -403,7 +470,15 @@ export default function UsersPage() {
                 )}
               </div>
 
-              <div className="flex justify-end mt-6">
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveStatus()}
+                  disabled={isUpdatingStatus || nextStatus === (selectedUserDetails?.status || selectedUser.status)}
+                  className="bg-[#4f795a] text-white px-8 py-2.5 rounded-lg font-medium hover:bg-[#3d5e46] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isUpdatingStatus ? "Saving..." : "Save Status"}
+                </button>
                 <button
                   type="button"
                   onClick={handleCloseModal}

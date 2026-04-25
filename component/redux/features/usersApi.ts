@@ -35,6 +35,16 @@ export type AdminUserDetails = {
   overallProgress: string;
 };
 
+export type UpdateAdminUserStatusRequest = {
+  userId: string;
+  status: string;
+};
+
+export type UpdateAdminUserStatusResponse = {
+  id: string;
+  status: string;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   data: T;
@@ -109,6 +119,15 @@ const normalizeUserDetails = (payload: unknown): AdminUserDetails => {
   };
 };
 
+const normalizeUserStatusResponse = (payload: unknown): UpdateAdminUserStatusResponse => {
+  const data = isRecord(payload) ? payload : {};
+
+  return {
+    id: readString(data.id),
+    status: readString(data.status),
+  };
+};
+
 export const usersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getAdminUsers: builder.query<
@@ -126,6 +145,7 @@ export const usersApi = baseApi.injectEndpoints({
       }),
       transformResponse: (response: ApiEnvelope<AdminUsersListResponse>) =>
         normalizeUsersListResponse(response.data),
+      providesTags: ["Users"],
     }),
     getAdminUserById: builder.query<AdminUserDetails, string>({
       query: (userId) => ({
@@ -134,9 +154,27 @@ export const usersApi = baseApi.injectEndpoints({
       }),
       transformResponse: (response: ApiEnvelope<AdminUserDetails>) =>
         normalizeUserDetails(response.data),
+      providesTags: ["Users"],
+    }),
+    updateAdminUserStatus: builder.mutation<
+      UpdateAdminUserStatusResponse,
+      UpdateAdminUserStatusRequest
+    >({
+      query: ({ userId, status }) => ({
+        url: `/api/admin/users/${userId}/status`,
+        method: "PATCH",
+        body: { status },
+      }),
+      transformResponse: (response: ApiEnvelope<UpdateAdminUserStatusResponse>) =>
+        normalizeUserStatusResponse(response.data),
+      invalidatesTags: ["Users"],
     }),
   }),
   overrideExisting: false,
 });
 
-export const { useGetAdminUsersQuery, useLazyGetAdminUserByIdQuery } = usersApi;
+export const {
+  useGetAdminUsersQuery,
+  useLazyGetAdminUserByIdQuery,
+  useUpdateAdminUserStatusMutation,
+} = usersApi;

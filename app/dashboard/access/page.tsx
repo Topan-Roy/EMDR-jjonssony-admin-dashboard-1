@@ -1,93 +1,146 @@
 "use client";
 
-import React, { useState } from 'react';
-import { ChevronLeft, Eye, X } from 'lucide-react';
-import Link from 'next/link';
+import { useState } from "react";
+import { ChevronLeft, Eye, X } from "lucide-react";
+import Link from "next/link";
+import type { AdminUserListItem } from "@/component/redux/features/usersApi";
+import {
+  useGetAdminUsersQuery,
+  useUpdateAdminUserStatusMutation,
+} from "@/component/redux/features/usersApi";
 
-// --- Types ---
-type Status = 'Pending' | 'Approved' | 'Cancelled';
-
-interface UserRequest {
-  id: string;
-  name: string;
-  email: string;
-  joinedDate: string;
-  status: Status;
-  assessment: {
-    phq9: { level: string; score: string };
-    gad7: { level: string; score: string };
-    des2: { score: string };
-  };
-}
-
-// --- Mock Data ---
-const initialUsers: UserRequest[] = [
-  {
-    id: "User-213",
-    name: "Leslie Alexander",
-    email: "user1@example.com",
-    joinedDate: "Nov 13, 2025",
-    status: "Pending",
-    assessment: {
-      phq9: { level: "Minimal", score: "0/27" },
-      gad7: { level: "Minimal", score: "0/21" },
-      des2: { score: "0.0%" },
-    }
-  },
-  {
-    id: "User-214",
-    name: "Ronald Richards",
-    email: "ronald@example.com",
-    joinedDate: "Nov 14, 2025",
-    status: "Approved",
-    assessment: {
-      phq9: { level: "Moderate", score: "12/27" },
-      gad7: { level: "Severe", score: "16/21" },
-      des2: { score: "15.0%" },
-    }
-  },
-  {
-    id: "User-215",
-    name: "Jane Cooper",
-    email: "jane@example.com",
-    joinedDate: "Nov 15, 2025",
-    status: "Cancelled",
-    assessment: {
-      phq9: { level: "None", score: "0/27" },
-      gad7: { level: "None", score: "0/21" },
-      des2: { score: "0.0%" },
-    }
-  },
-  {
-    id: "User-216",
-    name: "Robert Fox",
-    email: "robert@example.com",
-    joinedDate: "Nov 16, 2025",
-    status: "Pending",
-    assessment: {
-      phq9: { level: "Minimal", score: "3/27" },
-      gad7: { level: "Mild", score: "6/21" },
-      des2: { score: "2.5%" },
-    }
-  },
+const STATUS_OPTIONS = [
+  { label: "Active", value: "active" },
+  { label: "Suspended", value: "suspended" },
 ];
 
-export default function AccessPage() {
-  const [users, setUsers] = useState<UserRequest[]>(initialUsers);
-  const [selectedUser, setSelectedUser] = useState<UserRequest | null>(null);
+const getErrorMessage = (error: unknown): string => {
+  if (!error || typeof error !== "object") {
+    return "Request failed. Please try again.";
+  }
 
-  // Handle Status Update
-  const handleStatusChange = (userId: string, newStatus: Status) => {
-    setUsers(users.map(user => 
-      user.id === userId ? { ...user, status: newStatus } : user
-    ));
-    setSelectedUser(null); // Close modal
+  if ("data" in error) {
+    const data = (error as { data?: unknown }).data;
+
+    if (typeof data === "string" && data.trim().length > 0) {
+      return data;
+    }
+
+    if (data && typeof data === "object" && "message" in data) {
+      const message = (data as { message?: unknown }).message;
+
+      if (typeof message === "string" && message.trim().length > 0) {
+        return message;
+      }
+    }
+  }
+
+  if ("message" in error) {
+    const message = (error as { message?: unknown }).message;
+
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message;
+    }
+  }
+
+  return "Request failed. Please try again.";
+};
+
+const formatStatus = (status: string) => {
+  if (!status.trim()) {
+    return "Unknown";
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+};
+
+const formatDate = (value: string) => {
+  if (!value) {
+    return "N/A";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const getStatusTextClasses = (status: string) => {
+  const normalizedStatus = status.trim().toLowerCase();
+
+  return normalizedStatus === "active" ? "text-[#4f795a]" : "text-red-500";
+};
+
+export default function AccessPage() {
+  const [selectedUser, setSelectedUser] = useState<AdminUserListItem | null>(null);
+  const [nextStatus, setNextStatus] = useState("active");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isError,
+    error,
+    refetch,
+  } = useGetAdminUsersQuery({
+    page: 1,
+    limit: 10,
+    search: "",
+  });
+
+  const [updateAdminUserStatus, { isLoading: isUpdatingStatus }] =
+    useUpdateAdminUserStatusMutation();
+
+  const users = data?.users ?? [];
+
+  const handleOpenModal = (user: AdminUserListItem) => {
+    setSelectedUser(user);
+    setNextStatus(user.status || "active");
+    setSaveMessage(null);
+    setSaveErrorMessage(null);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedUser(null);
+    setSaveMessage(null);
+    setSaveErrorMessage(null);
+  };
+
+  const handleSaveStatus = async () => {
+    if (!selectedUser) {
+      return;
+    }
+
+    setSaveMessage(null);
+    setSaveErrorMessage(null);
+
+    try {
+      const response = await updateAdminUserStatus({
+        userId: selectedUser.id,
+        status: nextStatus,
+      }).unwrap();
+
+      setSelectedUser((currentUser) =>
+        currentUser ? { ...currentUser, status: response.status } : currentUser,
+      );
+      setSaveMessage(`User status updated to ${formatStatus(response.status)}.`);
+      void refetch();
+    } catch (saveError) {
+      setSaveErrorMessage(getErrorMessage(saveError));
+    }
   };
 
   return (
-    <div className="min-h-screen   md:p-8   text-gray-800">
-      
-      {/* Header */}
+    <div className="min-h-screen md:p-8 text-gray-800">
       <div className="flex items-center gap-2 mb-8 text-gray-700">
         <Link href="/dashboard" className="hover:opacity-70 flex items-center gap-2">
           <ChevronLeft size={20} />
@@ -95,68 +148,101 @@ export default function AccessPage() {
         </Link>
       </div>
 
-      {/* Main Table Card */}
+      {isError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>{getErrorMessage(error)}</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#3d5e46]"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-hidden min-h-[600px]">
-        {/* Table Container for Responsiveness */}
         <div className="overflow-x-auto">
-          {/* Table Header */}
           <div className="grid grid-cols-12 px-8 py-6 border-b border-gray-100 bg-[#fbfbfb] min-w-[600px]">
-            <div className="col-span-5 text-sm font-bold text-gray-500 uppercase tracking-wider">User Name</div>
-            <div className="col-span-5 text-sm font-bold text-gray-500 uppercase tracking-wider">Status</div>
-            <div className="col-span-2 text-sm font-bold text-gray-500 uppercase tracking-wider text-right">Action</div>
+            <div className="col-span-5 text-sm font-bold text-gray-500 uppercase tracking-wider">
+              User Name
+            </div>
+            <div className="col-span-5 text-sm font-bold text-gray-500 uppercase tracking-wider">
+              Status
+            </div>
+            <div className="col-span-2 text-sm font-bold text-gray-500 uppercase tracking-wider text-right">
+              Action
+            </div>
           </div>
 
-          {/* Table Body */}
           <div className="divide-y divide-gray-50 min-w-[600px]">
-            {users.map((user) => (
-              <div 
-                key={user.id} 
-                className={`grid grid-cols-12 px-8 py-6 items-center transition-colors hover:bg-gray-50 ${user.status === 'Approved' ? 'bg-[#f4faf7]/50' : ''}`}
-              >
-                <div className="col-span-5 font-medium text-gray-700">{user.name}</div>
-                <div className="col-span-5">
-                  <span className={`text-sm font-medium ${
-                    user.status === 'Approved' ? 'text-[#4f795a]' : 
-                    user.status === 'Cancelled' ? 'text-red-500' : 'text-gray-600'
-                  }`}>
-                    {user.status}
-                  </span>
+            {isLoading ? (
+              <div className="px-8 py-12 text-center text-sm text-gray-500">Loading users...</div>
+            ) : users.length > 0 ? (
+              users.map((user) => (
+                <div
+                  key={user.id}
+                  className={`grid grid-cols-12 px-8 py-6 items-center transition-colors hover:bg-gray-50 ${
+                    user.status.trim().toLowerCase() === "active" ? "bg-[#f4faf7]/50" : ""
+                  }`}
+                >
+                  <div className="col-span-5 font-medium text-gray-700">
+                    {user.userName || "N/A"}
+                  </div>
+                  <div className="col-span-5">
+                    <span className={`text-sm font-medium ${getStatusTextClasses(user.status)}`}>
+                      {formatStatus(user.status)}
+                    </span>
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenModal(user)}
+                      className="w-8 h-8 rounded-full bg-[#4f795a] text-white flex items-center justify-center hover:bg-[#3d5e46] transition-all shadow-sm"
+                    >
+                      <Eye size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div className="col-span-2 flex justify-end">
-                  <button 
-                    onClick={() => setSelectedUser(user)}
-                    className="w-8 h-8 rounded-full bg-[#4f795a] text-white flex items-center justify-center hover:bg-[#3d5e46] transition-all shadow-sm"
-                  >
-                    <Eye size={14} />
-                  </button>
-                </div>
+              ))
+            ) : (
+              <div className="px-8 py-12 text-center text-sm text-gray-500">
+                {isFetching ? "Refreshing users..." : "No users found."}
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
 
-      {/* --- NEW UPDATED MODAL (IMAGE DESIGN) --- */}
       {selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4  ">
-          {/* Modal Card */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-[600px] flex flex-col rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-200">
-            
-            {/* Modal Header */}
             <div className="flex justify-between items-center px-6 py-4 bg-white border-b border-gray-50 z-10">
               <h2 className="text-xl font-bold text-gray-700">User Details</h2>
-              <button 
-                onClick={() => setSelectedUser(null)} 
+              <button
+                type="button"
+                onClick={handleCloseModal}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <X size={24} />
               </button>
             </div>
 
-            {/* Scrollable Content with Cream Background */}
             <div className="overflow-y-auto bg-[#FFF9F2] p-6 space-y-8">
-              
-              {/* Top Info Grid */}
+              {saveMessage && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {saveMessage}
+                </div>
+              )}
+
+              {saveErrorMessage && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {saveErrorMessage}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-4">
                 <div>
                   <p className="text-[#9CA3AF] text-sm mb-1 font-medium">User ID</p>
@@ -168,100 +254,116 @@ export default function AccessPage() {
                 </div>
                 <div>
                   <p className="text-[#9CA3AF] text-sm mb-1 font-medium">Joined Date</p>
-                  <p className="text-gray-800 text-[15px]">{selectedUser.joinedDate}</p>
+                  <p className="text-gray-800 text-[15px]">{formatDate(selectedUser.joinedDate)}</p>
                 </div>
                 <div>
                   <p className="text-[#9CA3AF] text-sm mb-1 font-medium">Status</p>
-                  <p className="text-gray-800 text-[15px]">{selectedUser.status}</p>
+                  <select
+                    value={nextStatus}
+                    onChange={(event) => setNextStatus(event.target.value)}
+                    disabled={isUpdatingStatus}
+                    className="w-full rounded-lg border border-[#E5DED2] bg-white px-3 py-2 text-gray-800 text-[15px] outline-none transition-colors focus:border-[#4f795a]"
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              {/* Assessment Results Section */}
               <div className="bg-[#FFF9F2] rounded-xl border border-[#F5EAD9] p-5">
                 <h3 className="text-xl text-[#8c9bab] mb-4">Assessment Results</h3>
-                
+
                 <div className="space-y-4">
-                  {/* Depression */}
                   <div className="border-b border-[#EAE0D5] pb-3 last:border-0 last:pb-0">
                     <p className="text-[#9CA3AF] text-sm mb-1">Depression (PHQ-9)</p>
                     <p className="text-sm">
-                      <span className="font-bold text-gray-800">{selectedUser.assessment.phq9.level}</span>
-                      <span className="text-[#9CA3AF] ml-1 text-xs">(Score: {selectedUser.assessment.phq9.score})</span>
+                      <span className="font-bold text-gray-800">Not available</span>
+                      <span className="text-[#9CA3AF] ml-1 text-xs">(Score: N/A)</span>
                     </p>
                   </div>
-                  {/* Anxiety */}
                   <div className="border-b border-[#EAE0D5] pb-3 last:border-0 last:pb-0">
-                    <p className="text-[#9CA3AF]  text-sm mb-1">Anxiety (GAD-7)</p>
+                    <p className="text-[#9CA3AF] text-sm mb-1">Anxiety (GAD-7)</p>
                     <p className="text-sm">
-                      <span className="font-bold text-gray-800">{selectedUser.assessment.gad7.level}</span>
-                      <span className="text-[#9CA3AF] ml-1 text-xs">(Score: {selectedUser.assessment.gad7.score})</span>
+                      <span className="font-bold text-gray-800">Not available</span>
+                      <span className="text-[#9CA3AF] ml-1 text-xs">(Score: N/A)</span>
                     </p>
                   </div>
-                  {/* Dissociation */}
                   <div>
-                    <p className="text-[#9CA3AF]  text-sm mb-1">Dissociation (DES-II)</p>
+                    <p className="text-[#9CA3AF] text-sm mb-1">Dissociation (DES-II)</p>
                     <p className="text-sm">
-                      <span className="font-bold text-gray-800">Score: {selectedUser.assessment.des2.score}</span>
+                      <span className="font-bold text-gray-800">Score: N/A</span>
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Immediate Support Available Section */}
               <div>
                 <h3 className="text-xl text-[#8c9bab] mb-4 pl-1">Immediate Support Available</h3>
-                
+
                 <div className="bg-white rounded-xl p-6 shadow-sm space-y-5">
-                  {/* Item 1 */}
                   <div>
-                    <p className="font-bold text-gray-800 text-sm ">Samaritans (24/7)</p>
-                    <p className="text-xs text-gray-500 mt-1">Free emotional support for anyone in distress</p>
-                    <p className="text-xs text-gray-800 font-bold mt-1 ">
-                      Call: 116 123 <span className="text-[#9CA3AF] font-normal  ">(Free from any phone)</span>
+                    <p className="font-bold text-gray-800 text-sm">Samaritans (24/7)</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Free emotional support for anyone in distress
+                    </p>
+                    <p className="text-xs text-gray-800 font-bold mt-1">
+                      Call: 116 123{" "}
+                      <span className="text-[#9CA3AF] font-normal">(Free from any phone)</span>
                     </p>
                   </div>
-                  {/* Item 2 */}
                   <div>
-                    <p className="font-bold text-gray-800 text-sm ">NHS Crisis Line</p>
+                    <p className="font-bold text-gray-800 text-sm">NHS Crisis Line</p>
                     <p className="text-xs text-gray-500 mt-1">Urgent mental health support</p>
                     <p className="text-xs text-gray-800 font-bold mt-1">
-                      Call: 111 <span className="text-[#9CA3AF] font-normal  ">and select mental health option</span>
+                      Call: 111{" "}
+                      <span className="text-[#9CA3AF] font-normal">
+                        and select mental health option
+                      </span>
                     </p>
                   </div>
-                  {/* Item 3 */}
                   <div>
-                    <p className="font-bold text-gray-800 text-sm ">SHOUT Crisis Text Line</p>
-                    <p className="text-xs text-gray-500 mt-1">24/7 text support for anyone in crisis</p>
-                    <p className="text-xs text-gray-800 font-normal mt-1 ">
-                      Text "<span className="font-bold">SHOUT</span>" to <span className="font-bold">85258</span>
+                    <p className="font-bold text-gray-800 text-sm">SHOUT Crisis Text Line</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      24/7 text support for anyone in crisis
+                    </p>
+                    <p className="text-xs text-gray-800 font-normal mt-1">
+                      Text &quot;<span className="font-bold">SHOUT</span>&quot; to{" "}
+                      <span className="font-bold">85258</span>
                     </p>
                   </div>
-                  {/* Item 4 */}
                   <div>
-                    <p className="font-bold text-gray-800 text-sm  ">Your GP Surgery</p>
-                    <p className="text-xs text-gray-500 mt-1">Contact your GP for an urgent appointment</p>
-                    <p className="text-xs text-gray-500 mt-0.5">They can provide immediate support and referrals</p>
+                    <p className="font-bold text-gray-800 text-sm">Your GP Surgery</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Contact your GP for an urgent appointment
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      They can provide immediate support and referrals
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Footer Buttons */}
             <div className="p-5 bg-white border-t border-gray-100 flex gap-4">
-              <button 
-                onClick={() => setSelectedUser(null)}
-                className="flex-1 py-3 bg-[#F9FAFB] text-[#4F7A5B] rounded-lg   font-bold text-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="flex-1 py-3 bg-[#F9FAFB] text-[#4F7A5B] rounded-lg font-bold text-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
               >
                 Cancel
               </button>
-              <button 
-                onClick={() => handleStatusChange(selectedUser.id, 'Approved')}
-                className="flex-1 py-3 bg-[#4F7A5B] text-white rounded-lg   font-bold text-lg hover:bg-[#3E634A] transition-colors shadow-md"
+              <button
+                type="button"
+                onClick={() => void handleSaveStatus()}
+                disabled={isUpdatingStatus || nextStatus === selectedUser.status}
+                className="flex-1 py-3 bg-[#4F7A5B] text-white rounded-lg font-bold text-lg hover:bg-[#3E634A] transition-colors shadow-md disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Approve
+                {isUpdatingStatus ? "Saving..." : "Save Status"}
               </button>
             </div>
-
           </div>
         </div>
       )}
