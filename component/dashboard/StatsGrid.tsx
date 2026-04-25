@@ -1,5 +1,6 @@
-import React from 'react';
-import { TrendingUp } from 'lucide-react';
+import React from "react";
+import { TrendingUp } from "lucide-react";
+import type { DashboardOverview } from "../redux/features/dashboardApi";
 
 interface StatCardProps {
   title: string;
@@ -33,33 +34,68 @@ const StatCard = ({ title, value, percentage, subText }: StatCardProps) => {
   );
 };
 
-export default function StatsGrid() {
+interface StatsGridProps {
+  overview?: DashboardOverview;
+  isLoading?: boolean;
+}
+
+const formatCount = (value?: number) => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "0";
+  }
+
+  return value.toLocaleString("en-GB");
+};
+
+const readText = (value?: string, fallback = "0%") =>
+  typeof value === "string" && value.trim().length > 0 ? value : fallback;
+
+export default function StatsGrid({ overview, isLoading = false }: StatsGridProps) {
+  const totalUsers = overview?.totalUsers;
+  const activeSubscriptions = overview?.activeSubscriptions;
+  const roadmapsCreated = overview?.roadmapsCreated;
+  const sessionCompletion = overview?.sessionCompletion;
+
+  const loadingValue = "...";
+
   return (
     <div className="bg-transparent py-2  ">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
-        <StatCard 
-          title="Total Users" 
-          value="1,247" 
-          percentage="15%" 
-          subText="823 Active / 424 Inactive" 
+        <StatCard
+          title="Total Users"
+          value={isLoading ? loadingValue : formatCount(totalUsers?.count)}
+          percentage={isLoading ? loadingValue : readText(totalUsers?.growth)}
+          subText={
+            isLoading
+              ? "Loading user activity..."
+              : `${formatCount(totalUsers?.active)} Active / ${formatCount(totalUsers?.inactive)} Inactive`
+          }
         />
-        <StatCard 
-          title="Active Subscriptions" 
-          value="892" 
-          percentage="15%" 
-          subText="71.5% conversion rate" 
+        <StatCard
+          title="Active Subscriptions"
+          value={isLoading ? loadingValue : formatCount(activeSubscriptions?.count)}
+          percentage={isLoading ? loadingValue : readText(activeSubscriptions?.growth)}
+          subText={
+            isLoading
+              ? "Loading subscription data..."
+              : `${readText(activeSubscriptions?.conversionRate)} conversion rate`
+          }
         />
-        <StatCard 
-          title="Roadmaps Created" 
-          value="3,402" 
-          percentage="15%" 
-          subText="2,655 AI / 747 Psychologist" 
+        <StatCard
+          title="Roadmaps Created"
+          value={isLoading ? loadingValue : formatCount(roadmapsCreated?.count)}
+          percentage={isLoading ? loadingValue : readText(roadmapsCreated?.growth)}
+          subText={
+            isLoading
+              ? "Loading roadmap counts..."
+              : `${formatCount(roadmapsCreated?.ai)} AI / ${formatCount(roadmapsCreated?.psychologist)} Psychologist`
+          }
         />
-        <StatCard 
-          title="Session Completion" 
-          value="68%" 
-          percentage="15%" 
-          subText="Average completion rate" 
+        <StatCard
+          title="Session Completion"
+          value={isLoading ? loadingValue : readText(sessionCompletion?.rate)}
+          percentage={isLoading ? loadingValue : readText(sessionCompletion?.growth)}
+          subText={isLoading ? "Loading completion rate..." : "Average completion rate"}
         />
       </div>
     </div>

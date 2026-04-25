@@ -1,14 +1,12 @@
 "use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { TrendingUp, Eye, X } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
-import StatsGrid from './StatsGrid';
+import { useState } from "react";
+import Link from "next/link";
+import { Eye, TrendingUp, X } from "lucide-react";
+import StatsGrid from "./StatsGrid";
+import { useGetDashboardQuery } from "../redux/features/dashboardApi";
 
-const chartData = [{ name: 'Jun', value: 60 }, { name: 'Feb', value: 65 }, { name: 'Mar', value: 95 }, { name: 'Apr', value: 30 }, { name: 'May', value: 90 }, { name: 'Jun', value: 25 }];
-
-// Mock data 
+// Mock data
 const dashboardUsers = [
   {
     id: "User-213",
@@ -51,8 +49,72 @@ const dashboardUsers = [
   }
 ];
 
+type DashboardUser = (typeof dashboardUsers)[number];
+
+const getErrorMessage = (error: unknown): string => {
+  if (!error || typeof error !== "object") {
+    return "Failed to load dashboard data.";
+  }
+
+  if ("data" in error) {
+    const data = (error as { data?: unknown }).data;
+
+    if (typeof data === "string" && data.trim().length > 0) {
+      return data;
+    }
+
+    if (data && typeof data === "object" && "message" in data) {
+      const message = (data as { message?: unknown }).message;
+
+      if (typeof message === "string" && message.trim().length > 0) {
+        return message;
+      }
+    }
+  }
+
+  if ("message" in error) {
+    const message = (error as { message?: unknown }).message;
+
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message;
+    }
+  }
+
+  return "Failed to load dashboard data.";
+};
+
+const formatCount = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("en-GB") : "0";
+
+const formatCurrencyValue = (amount?: number, currency = "") => {
+  const safeAmount = typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
+  return `${currency}${safeAmount.toLocaleString("en-GB")}`;
+};
+
+const readText = (value?: string, fallback = "0%") =>
+  typeof value === "string" && value.trim().length > 0 ? value : fallback;
+
 export default function DashboardPage() {
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<DashboardUser | null>(null);
+  const { data, isLoading, isFetching, isError, error, refetch } = useGetDashboardQuery();
+
+  const overview = data?.overview;
+  const revenue = data?.revenue;
+  const subscriptionDistribution = data?.subscriptionDistribution ?? [];
+  const totalUsersCount = overview?.totalUsers?.count ?? 0;
+  const distributionBase =
+    totalUsersCount > 0
+      ? totalUsersCount
+      : Math.max(...subscriptionDistribution.map((item) => item.userCount), 0);
+
+  const getDistributionWidth = (userCount: number) => {
+    if (distributionBase <= 0) {
+      return 0;
+    }
+
+    const width = (userCount / distributionBase) * 100;
+    return Math.min(Math.max(width, userCount > 0 ? 8 : 0), 100);
+  };
 
   return (
     <>
@@ -61,43 +123,75 @@ export default function DashboardPage() {
         <p className="text-gray-500 text-sm">Real-time monitoring of platform health and user activity</p>
       </section>
 
-      <StatsGrid />
+      {isError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>{getErrorMessage(error)}</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="rounded-lg bg-[#4f795a] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#3d5e46]"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      <StatsGrid overview={overview} isLoading={isLoading && !data} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 my-8">
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-50">
           <h3 className="text-2xl   mb-1 text-gray-800">Monthly Recurring Revenue</h3>
-          <p className="text-gray-500 text-sm mb-6">Revenue trends over the last 6 months</p>
+          <p className="text-gray-500 text-sm mb-6">Current recurring revenue snapshot</p>
           <div className="flex items-center gap-4 mb-8">
-            <span className="text-4xl font-bold   text-gray-800">£156,910</span>
-            <div className="flex items-center gap-1 text-[#497955]"><TrendingUp size={24} /><span className="text-lg font-bold">15%</span></div>
+            <span className="text-4xl font-bold   text-gray-800">
+              {isLoading && !data ? "Loading..." : formatCurrencyValue(revenue?.mrr, revenue?.currency)}
+            </span>
+            <div className="flex items-center gap-1 text-[#497955]">
+              <TrendingUp size={24} />
+              <span className="text-lg font-bold">
+                {isLoading && !data ? "..." : readText(revenue?.growth)}
+              </span>
+            </div>
           </div>
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4f795a" stopOpacity={0.2} /><stop offset="95%" stopColor="#4f795a" stopOpacity={0} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} dy={10} />
-                <YAxis axisLine={false} tickLine={false} />
-                <Area type="monotone" dataKey="value" stroke="#4f795a" strokeWidth={2} fill="url(#g)" dot={{ r: 5, fill: "#fff", stroke: "#4f795a", strokeWidth: 2 }} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="rounded-[2rem] border border-[#dbe4dd] bg-[#f7faf8] px-6 py-5">
+            <p className="text-sm text-gray-500">Revenue chart is hidden on this dashboard.</p>
+            <p className="mt-2 text-base font-medium text-gray-800">
+              {isFetching && !data ? "Refreshing revenue data..." : "Showing the latest MRR value only."}
+            </p>
           </div>
         </div>
 
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-50">
           <h3 className="text-2xl   mb-6 text-gray-800">Subscription Distribution</h3>
-          <div className="space-y-8">
-            {['Rockstar', 'Hero', 'Prime', 'Main', 'Free'].map((plan) => (
-              <div key={plan} className="space-y-2">
-                <div className="flex justify-between font- "><span className='text-gray-500'>{plan}</span> <p className="text-[14px] font-bold text-gray-500">
-                  <span className="text-[14px] font-normal text-gray-800 mr-2">89 User</span>
-                  £45/Month
-                </p>
+          {subscriptionDistribution.length > 0 ? (
+            <div className="space-y-8">
+              {subscriptionDistribution.map((plan) => (
+                <div key={plan._id || plan.planName} className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">{plan.planName}</span>
+                    <p className="text-[14px] font-bold text-gray-500">
+                      <span className="mr-2 text-[14px] font-normal text-gray-800">
+                        {formatCount(plan.userCount)} {plan.userCount === 1 ? "User" : "Users"}
+                      </span>
+                      {plan.pricePerMonth}
+                    </p>
+                  </div>
+                  <div className="w-full bg-[#dbe4dd] h-3 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#4f795a] h-full rounded-full transition-all"
+                      style={{ width: `${getDistributionWidth(plan.userCount)}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-[#dbe4dd] h-3 rounded-full overflow-hidden"><div className="bg-[#4f795a] h-full w-[65%] rounded-full"></div></div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-[#dbe4dd] bg-[#f7faf8] text-sm text-gray-500">
+              {isLoading && !data ? "Loading subscription data..." : "No subscription distribution available yet."}
+            </div>
+          )}
         </div>
       </div>
 
@@ -122,8 +216,8 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {dashboardUsers.map((user, i) => (
-                <tr key={i} className="text-sm  ">
+              {dashboardUsers.map((user) => (
+                <tr key={user.id} className="text-sm  ">
                   <td className="px-6 py-4 text-gray-500">{user.name}</td>
                   <td className="px-6 py-4 text-gray-500  ">{user.email}</td>
                   <td className="px-6 py-4">
