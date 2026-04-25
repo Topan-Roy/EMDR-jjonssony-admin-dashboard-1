@@ -3,6 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Eye, TrendingUp, X } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from "recharts";
 import StatsGrid from "./StatsGrid";
 import { useGetDashboardQuery } from "../redux/features/dashboardApi";
 import type { AdminUserListItem } from "../redux/features/usersApi";
@@ -143,6 +151,7 @@ export default function DashboardPage() {
 
   const overview = data?.overview;
   const revenue = data?.revenue;
+  const chartData = revenue?.trend ?? [];
   const subscriptionDistribution = data?.subscriptionDistribution ?? [];
   const dashboardUsers = usersResponse?.users ?? [];
   const totalUsersCount = overview?.totalUsers?.count ?? 0;
@@ -203,7 +212,6 @@ export default function DashboardPage() {
   const modalProgress = parseProgress(
     selectedUserDetails?.overallProgress ?? selectedUser?.sessionProgress ?? "0%",
   );
-  const modalStatus = formatStatus(selectedUserDetails?.status ?? selectedUser?.status ?? "");
 
   return (
     <>
@@ -232,7 +240,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 my-8">
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-50">
           <h3 className="text-2xl   mb-1 text-gray-800">Monthly Recurring Revenue</h3>
-          <p className="text-gray-500 text-sm mb-6">Current recurring revenue snapshot</p>
+          <p className="text-gray-500 text-sm mb-6">Revenue trends over the last 12 months</p>
           <div className="flex items-center gap-4 mb-8">
             <span className="text-4xl font-bold   text-gray-800">
               {isLoading && !data ? "Loading..." : formatCurrencyValue(revenue?.mrr, revenue?.currency)}
@@ -244,11 +252,35 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
-          <div className="rounded-[2rem] border border-[#dbe4dd] bg-[#f7faf8] px-6 py-5">
-            <p className="text-sm text-gray-500">Revenue chart is hidden on this dashboard.</p>
-            <p className="mt-2 text-base font-medium text-gray-800">
-              {isFetching && !data ? "Refreshing revenue data..." : "Showing the latest MRR value only."}
-            </p>
+          <div className="h-72 w-full">
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="dashboard-revenue-gradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4f795a" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#4f795a" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#4f795a"
+                    strokeWidth={2}
+                    fill="url(#dashboard-revenue-gradient)"
+                    dot={{ r: 4, fill: "#fff", stroke: "#4f795a", strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: "#4f795a", stroke: "#fff", strokeWidth: 2 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-[2rem] border border-dashed border-[#dbe4dd] bg-[#f7faf8] px-6 py-5 text-sm text-gray-500">
+                {isFetching && !data ? "Refreshing revenue data..." : "No revenue trend available yet."}
+              </div>
+            )}
           </div>
         </div>
 

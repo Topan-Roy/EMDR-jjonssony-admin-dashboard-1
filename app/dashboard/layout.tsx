@@ -44,15 +44,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .filter(Boolean)
     .join(" ");
 
+  const extractedProfileData = (function() {
+    if (!adminProfile) return null;
+    const ap = adminProfile as Record<string, any>;
+    return ap.data?.user || ap.user || ap.data || ap;
+  })();
+
+  const resolvedName = extractedProfileData?.name || extractedProfileData?.full_name || (extractedProfileData?.firstName ? `${extractedProfileData.firstName} ${extractedProfileData.lastName || ''}`.trim() : "");
   const displayName =
-    adminProfile?.name ||
+    resolvedName ||
     fallbackName ||
     getString(authUserRecord?.name) ||
     getString(authUserRecord?.email) ||
     "Admin";
 
   const rawRole =
-    adminProfile?.role ||
+    extractedProfileData?.role ||
     getString(authUserRecord?.role) ||
     "admin";
 
@@ -60,8 +67,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ? rawRole.charAt(0).toUpperCase() + rawRole.slice(1).toLowerCase()
     : "Admin";
 
+  let resolvedProfilePic = extractedProfileData?.profilePic || extractedProfileData?.imageUrl || extractedProfileData?.profile_image || extractedProfileData?.image || extractedProfileData?.avatarUrl || "";
+  if (!resolvedProfilePic && extractedProfileData?.avatar) {
+    resolvedProfilePic = typeof extractedProfileData.avatar === 'string' ? extractedProfileData.avatar : extractedProfileData.avatar.imageUrl || "";
+  }
+
   const displayImage =
-    adminProfile?.profilePic ||
+    resolvedProfilePic ||
     getString(authUserRecord?.profilePic) ||
     "/image/profile-pic.png";
 

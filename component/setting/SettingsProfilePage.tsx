@@ -157,13 +157,38 @@ export default function SettingProfilePage() {
   const fallbackEmail = getString(authUserRecord?.email);
   const fallbackRole = getString(authUserRecord?.role);
   const fallbackUserProfilePic = getString(authUserRecord?.profilePic);
+  const fallbackPhone = getString(authUserRecord?.phoneNumber) || getString(authUserRecord?.contactNumber) || getString(authUserRecord?.phone_number) || getString(authUserRecord?.contact_number) || getString(authUserRecord?.contactNo) || getString(authUserRecord?.mobile) || getString(authUserRecord?.phone) || "";
+
+  // Extract robust profile data from possible nested API structures
+  const extractedProfileData = (function() {
+    if (!adminProfile) return null;
+    const ap = adminProfile as Record<string, any>;
+    return ap.data?.user || ap.user || ap.data || ap;
+  })();
+
+  // Debugging log to see the exact structure
+  if (adminProfile) {
+    console.log("=== Admin Profile API Data ===", {
+      original: adminProfile,
+      extracted: extractedProfileData
+    });
+  }
+
+  const resolvedName = extractedProfileData?.name || extractedProfileData?.full_name || (extractedProfileData?.firstName ? `${extractedProfileData.firstName} ${extractedProfileData.lastName || ''}`.trim() : "");
+  const resolvedPhone = extractedProfileData?.phoneNumber || extractedProfileData?.phone_number || extractedProfileData?.contactNumber || extractedProfileData?.contact_number || extractedProfileData?.contactNo || extractedProfileData?.mobile || extractedProfileData?.phone || fallbackPhone || "";
+  
+  // Extract avatar considering object structures from previous backend patterns
+  let resolvedProfilePic = extractedProfileData?.profilePic || extractedProfileData?.imageUrl || extractedProfileData?.profile_image || extractedProfileData?.image || extractedProfileData?.avatarUrl || "";
+  if (!resolvedProfilePic && extractedProfileData?.avatar) {
+    resolvedProfilePic = typeof extractedProfileData.avatar === 'string' ? extractedProfileData.avatar : extractedProfileData.avatar.imageUrl || "";
+  }
 
   const effectiveProfile = {
-    name: adminProfile?.name || fallbackName || "Admin",
-    email: adminProfile?.email || fallbackEmail,
-    phoneNumber: adminProfile?.phoneNumber || "",
-    profilePic: adminProfile?.profilePic || fallbackUserProfilePic || fallbackProfileImage,
-    role: adminProfile?.role || fallbackRole || "admin",
+    name: resolvedName || fallbackName || "Admin",
+    email: extractedProfileData?.email || fallbackEmail,
+    phoneNumber: resolvedPhone || "",
+    profilePic: resolvedProfilePic || fallbackUserProfilePic || fallbackProfileImage,
+    role: extractedProfileData?.role || fallbackRole || "admin",
   };
 
   const profilePhone = splitPhoneNumber(effectiveProfile.phoneNumber);
