@@ -160,7 +160,7 @@ export default function SettingProfilePage() {
   const fallbackPhone = getString(authUserRecord?.phoneNumber) || getString(authUserRecord?.contactNumber) || getString(authUserRecord?.phone_number) || getString(authUserRecord?.contact_number) || getString(authUserRecord?.contactNo) || getString(authUserRecord?.mobile) || getString(authUserRecord?.phone) || "";
 
   // Extract robust profile data from possible nested API structures
-  const extractedProfileData = (function() {
+  const extractedProfileData = (function () {
     if (!adminProfile) return null;
     const ap = adminProfile as Record<string, any>;
     return ap.data?.user || ap.user || ap.data || ap;
@@ -176,7 +176,7 @@ export default function SettingProfilePage() {
 
   const resolvedName = extractedProfileData?.name || extractedProfileData?.full_name || (extractedProfileData?.firstName ? `${extractedProfileData.firstName} ${extractedProfileData.lastName || ''}`.trim() : "");
   const resolvedPhone = extractedProfileData?.phoneNumber || extractedProfileData?.phone_number || extractedProfileData?.contactNumber || extractedProfileData?.contact_number || extractedProfileData?.contactNo || extractedProfileData?.mobile || extractedProfileData?.phone || fallbackPhone || "";
-  
+
   // Extract avatar considering object structures from previous backend patterns
   let resolvedProfilePic = extractedProfileData?.profilePic || extractedProfileData?.imageUrl || extractedProfileData?.profile_image || extractedProfileData?.image || extractedProfileData?.avatarUrl || "";
   if (!resolvedProfilePic && extractedProfileData?.avatar) {
@@ -488,6 +488,12 @@ export default function SettingProfilePage() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* Debug UI block to see EXACTLY what React holds */}
+              <div className="absolute top-[-30px] right-0 bg-red-100 text-red-800 text-[10px] p-1 rounded font-mono z-50">
+                RAW_API_PHONE: {extractedProfileData?.phoneNumber} | 
+                EFF_PHONE: {effectiveProfile?.phoneNumber}
               </div>
 
               {/* Phone input */}

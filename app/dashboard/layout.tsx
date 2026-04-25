@@ -44,7 +44,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .filter(Boolean)
     .join(" ");
 
-  const extractedProfileData = (function() {
+  const extractedProfileData = (function () {
     if (!adminProfile) return null;
     const ap = adminProfile as Record<string, any>;
     return ap.data?.user || ap.user || ap.data || ap;
