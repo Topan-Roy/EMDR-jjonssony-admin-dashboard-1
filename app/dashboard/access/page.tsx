@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, Eye, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
 import Link from "next/link";
 import type { AdminUserListItem } from "@/component/redux/features/usersApi";
 import {
@@ -79,6 +79,7 @@ const getStatusTextClasses = (status: string) => {
 };
 
 export default function AccessPage() {
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<AdminUserListItem | null>(null);
   const [nextStatus, setNextStatus] = useState("active");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export default function AccessPage() {
     error,
     refetch,
   } = useGetAdminUsersQuery({
-    page: 1,
+    page: currentPage,
     limit: 10,
     search: "",
   });
@@ -101,6 +102,13 @@ export default function AccessPage() {
     useUpdateAdminUserStatusMutation();
 
   const users = data?.users ?? [];
+  const pagination = data?.pagination;
+  const totalPages = pagination?.totalPages ?? 1;
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const handleOpenModal = (user: AdminUserListItem) => {
     setSelectedUser(user);
@@ -214,6 +222,63 @@ export default function AccessPage() {
             )}
           </div>
         </div>
+
+        {/* Pagination */}
+        {!isLoading && users.length > 0 && totalPages > 1 && (
+          <div className="px-8 py-6 border-t border-gray-100 bg-[#fbfbfb] flex items-center justify-between">
+            <div className="text-sm text-gray-500">
+              Showing page <span className="font-medium text-gray-700">{currentPage}</span> of{" "}
+              <span className="font-medium text-gray-700">{totalPages}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={18} />
+              </button>
+
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+
+                return (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => handlePageChange(pageNum)}
+                    className={`min-w-[40px] h-10 rounded-lg text-sm font-medium transition-all ${
+                      currentPage === pageNum
+                        ? "bg-[#4f795a] text-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-50 border border-transparent hover:border-gray-200"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedUser && (
