@@ -101,8 +101,8 @@ const normalizeMetric = (metric: unknown): DashboardOverviewMetric => {
 };
 
 const normalizeDashboardData = (payload: DashboardData): DashboardData => {
-  const overview = isRecord(payload.overview) ? payload.overview : {};
-  const revenue = isRecord(payload.revenue) ? payload.revenue : {};
+  const overview: any = isRecord(payload.overview) ? payload.overview : {};
+  const revenue: any = isRecord(payload.revenue) ? payload.revenue : {};
 
   return {
     overview: {
@@ -116,7 +116,7 @@ const normalizeDashboardData = (payload: DashboardData): DashboardData => {
       currency: readString(revenue.currency),
       growth: readString(revenue.growth),
       trend: Array.isArray(revenue.trend)
-        ? revenue.trend.map((point, index) => normalizeTrendPoint(point, index))
+        ? revenue.trend.map((point: any, index: number) => normalizeTrendPoint(point, index))
         : [],
     },
     subscriptionDistribution: Array.isArray(payload.subscriptionDistribution)
