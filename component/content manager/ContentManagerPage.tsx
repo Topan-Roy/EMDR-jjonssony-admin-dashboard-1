@@ -2,8 +2,8 @@
 
 import type { SerializedError } from "@reduxjs/toolkit";
 import type { FetchBaseQueryError } from "@reduxjs/toolkit/query";
-import React, { useState, useRef, ChangeEvent, useMemo } from 'react';
-import { Upload, Eye, Trash2, Play, Music, X, Image as ImageIcon, ChevronDown, Calendar, FileText } from 'lucide-react';
+import React, { useState, useRef, ChangeEvent, useMemo, useEffect } from 'react';
+import { Upload, Eye, Trash2, Play, Music, X, Image as ImageIcon, ChevronDown, Calendar, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCreateMediaMutation, useDeleteMediaMutation, useGetContentCategoriesQuery, useGetMediaListQuery, useUpdateMediaMutation } from '../redux/features/contentApi';
 
 type ContentType = 'Images' | 'Videos' | 'Audio';
@@ -109,6 +109,15 @@ export default function ContentManagerPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null); // For View Modal
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Reset page when tab changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
+
   const tabs: ContentType[] = ['Images', 'Videos', 'Audio'];
   const { data: mediaList = [], refetch: refetchMediaList } = useGetMediaListQuery({ page: 1, limit: 20 });
   const [deleteMedia] = useDeleteMediaMutation();
@@ -141,6 +150,12 @@ export default function ContentManagerPage() {
     (item) => !deletedIds.includes(item.id),
   );
   const filteredContent = contents.filter(item => item.type === activeTab);
+
+  const totalPages = Math.ceil(filteredContent.length / itemsPerPage);
+  const paginatedContent = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredContent.slice(start, start + itemsPerPage);
+  }, [filteredContent, currentPage]);
 
   const handleDelete = async (id: number | string) => {
     setActionError(null);
@@ -257,8 +272,8 @@ export default function ContentManagerPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredContent.length > 0 ? (
-              filteredContent.map((item) => (
+            {paginatedContent.length > 0 ? (
+              paginatedContent.map((item) => (
                 <tr key={item.id} className="text-gray-700   hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <button
@@ -317,6 +332,68 @@ export default function ContentManagerPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination UI */}
+      {filteredContent.length > 0 && (
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 px-2 py-4">
+          <p className="text-sm text-gray-500 font-medium">
+            Showing <span className="text-gray-800">{(currentPage - 1) * itemsPerPage + 1}</span> to{" "}
+            <span className="text-gray-800">
+              {Math.min(currentPage * itemsPerPage, filteredContent.length)}
+            </span>{" "}
+            of <span className="text-gray-800">{filteredContent.length}</span> results
+          </p>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // Logic to show only some page numbers if there are too many
+                if (
+                  totalPages > 7 &&
+                  page !== 1 &&
+                  page !== totalPages &&
+                  (page < currentPage - 1 || page > currentPage + 1)
+                ) {
+                  if (page === currentPage - 2 || page === currentPage + 2) {
+                    return <span key={page} className="px-2 text-gray-400">...</span>;
+                  }
+                  return null;
+                }
+
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`min-w-[40px] h-10 rounded-lg text-sm font-bold transition-all ${
+                      currentPage === page
+                        ? "bg-[#6B8E76] text-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-50 border border-transparent hover:border-gray-200"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* --- UPLOAD MODAL --- */}
       {isUploadModalOpen && (
