@@ -1,18 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
 import Link from "next/link";
-import type { AdminUserListItem } from "@/component/redux/features/usersApi";
+import type { SubscriptionAccessRequest } from "@/component/redux/features/subscriptionsApi";
 import {
-  useGetAdminUsersQuery,
-  useUpdateAdminUserStatusMutation,
-} from "@/component/redux/features/usersApi";
+  useGetSubscriptionRequestsQuery,
+  useUpdateSubscriptionRequestStatusMutation,
+} from "@/component/redux/features/subscriptionsApi";
 
-const STATUS_OPTIONS = [
-  { label: "Active", value: "active" },
-  { label: "Suspended", value: "suspended" },
-];
+const ITEMS_PER_PAGE = 10;
+const APPROVAL_COMMENT = "Welcome! Your free plan access has been approved.";
 
 const getErrorMessage = (error: unknown): string => {
   if (!error || typeof error !== "object") {
@@ -47,11 +45,16 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 const formatStatus = (status: string) => {
-  if (!status.trim()) {
+  const normalizedStatus = status.trim();
+
+  if (!normalizedStatus) {
     return "Unknown";
   }
 
-  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  return normalizedStatus
+    .split(/[\s_-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 };
 
 const formatDate = (value: string) => {
@@ -72,59 +75,87 @@ const formatDate = (value: string) => {
   });
 };
 
+const getUserName = (request: SubscriptionAccessRequest) => {
+  const fullName = [request.userId.firstName, request.userId.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return fullName || request.userId.email || "N/A";
+};
+
 const getStatusTextClasses = (status: string) => {
   const normalizedStatus = status.trim().toLowerCase();
 
-  return normalizedStatus === "active" ? "text-[#4f795a]" : "text-red-500";
+  if (normalizedStatus === "approved" || normalizedStatus === "active") {
+    return "text-[#4f795a]";
+  }
+
+  if (normalizedStatus === "pending") {
+    return "text-amber-600";
+  }
+
+  if (
+    normalizedStatus === "rejected" ||
+    normalizedStatus === "declined" ||
+    normalizedStatus === "cancelled" ||
+    normalizedStatus === "suspended"
+  ) {
+    return "text-red-500";
+  }
+
+  return "text-gray-500";
 };
 
 export default function AccessPage() {
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedUser, setSelectedUser] = useState<AdminUserListItem | null>(null);
-  const [nextStatus, setNextStatus] = useState("active");
+  const [selectedRequest, setSelectedRequest] = useState<SubscriptionAccessRequest | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
 
   const {
-    data,
+    data: subscriptionRequests = [],
     isLoading,
     isFetching,
     isError,
     error,
     refetch,
-  } = useGetAdminUsersQuery({
-    page: currentPage,
-    limit: 10,
-    search: "",
-  });
+  } = useGetSubscriptionRequestsQuery();
+  const [updateSubscriptionRequestStatus, { isLoading: isApproving }] =
+    useUpdateSubscriptionRequestStatusMutation();
 
-  const [updateAdminUserStatus, { isLoading: isUpdatingStatus }] =
-    useUpdateAdminUserStatusMutation();
+  const totalPages = Math.max(1, Math.ceil(subscriptionRequests.length / ITEMS_PER_PAGE));
+  const activePage = Math.min(currentPage, totalPages);
 
-  const users = data?.users ?? [];
-  const pagination = data?.pagination;
-  const totalPages = pagination?.totalPages ?? 1;
+  const requests = useMemo(() => {
+    const startIndex = (activePage - 1) * ITEMS_PER_PAGE;
+
+    return subscriptionRequests.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [activePage, subscriptionRequests]);
 
   const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+    setCurrentPage(Math.min(Math.max(page, 1), totalPages));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleOpenModal = (user: AdminUserListItem) => {
-    setSelectedUser(user);
-    setNextStatus(user.status || "active");
+  const handleOpenModal = (request: SubscriptionAccessRequest) => {
+    setSelectedRequest(request);
     setSaveMessage(null);
     setSaveErrorMessage(null);
   };
 
   const handleCloseModal = () => {
-    setSelectedUser(null);
+    if (isApproving) {
+      return;
+    }
+
+    setSelectedRequest(null);
     setSaveMessage(null);
     setSaveErrorMessage(null);
   };
 
-  const handleSaveStatus = async () => {
-    if (!selectedUser) {
+  const handleApproveRequest = async () => {
+    if (!selectedRequest) {
       return;
     }
 
@@ -132,23 +163,30 @@ export default function AccessPage() {
     setSaveErrorMessage(null);
 
     try {
-      const response = await updateAdminUserStatus({
-        userId: selectedUser.id,
-        status: nextStatus,
+      const response = await updateSubscriptionRequestStatus({
+        requestId: selectedRequest._id,
+        status: "approved",
+        comment: APPROVAL_COMMENT,
       }).unwrap();
 
-      setSelectedUser((currentUser) =>
-        currentUser ? { ...currentUser, status: response.status } : currentUser,
+      setSelectedRequest((currentRequest) =>
+        currentRequest
+          ? {
+              ...currentRequest,
+              status: response.status || "approved",
+              adminComment: response.adminComment || APPROVAL_COMMENT,
+              updatedAt: new Date().toISOString(),
+            }
+          : currentRequest,
       );
-      setSaveMessage(`User status updated to ${formatStatus(response.status)}.`);
-      void refetch();
-    } catch (saveError) {
-      setSaveErrorMessage(getErrorMessage(saveError));
+      setSaveMessage(response.message || "Application approved successfully.");
+    } catch (approveError) {
+      setSaveErrorMessage(getErrorMessage(approveError));
     }
   };
 
   return (
-    <div className="min-h-screen md:p-8 text-gray-800">
+    <div className="min-h-screen md:p-10 text-gray-800">
       <div className="flex items-center gap-2 mb-8 text-gray-700">
         <Link href="/dashboard" className="hover:opacity-70 flex items-center gap-2">
           <ChevronLeft size={20} />
@@ -171,13 +209,16 @@ export default function AccessPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-hidden min-h-[600px]">
+      <div className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-hidden min-h-[680px]">
         <div className="overflow-x-auto">
-          <div className="grid grid-cols-12 px-8 py-6 border-b border-gray-100 bg-[#fbfbfb] min-w-[600px]">
-            <div className="col-span-5 text-sm font-bold text-gray-500 uppercase tracking-wider">
+          <div className="grid grid-cols-12 px-10 py-7 border-b border-gray-100 bg-[#fbfbfb] min-w-[840px]">
+            <div className="col-span-4 text-sm font-bold text-gray-500 uppercase tracking-wider">
               User Name
             </div>
-            <div className="col-span-5 text-sm font-bold text-gray-500 uppercase tracking-wider">
+            <div className="col-span-3 text-sm font-bold text-gray-500 uppercase tracking-wider">
+              Plan
+            </div>
+            <div className="col-span-3 text-sm font-bold text-gray-500 uppercase tracking-wider">
               Status
             </div>
             <div className="col-span-2 text-sm font-bold text-gray-500 uppercase tracking-wider text-right">
@@ -185,30 +226,37 @@ export default function AccessPage() {
             </div>
           </div>
 
-          <div className="divide-y divide-gray-50 min-w-[600px]">
+          <div className="divide-y divide-gray-50 min-w-[840px]">
             {isLoading ? (
-              <div className="px-8 py-12 text-center text-sm text-gray-500">Loading users...</div>
-            ) : users.length > 0 ? (
-              users.map((user) => (
+              <div className="px-8 py-12 text-center text-sm text-gray-500">
+                Loading subscription requests...
+              </div>
+            ) : requests.length > 0 ? (
+              requests.map((request) => (
                 <div
-                  key={user.id}
-                  className={`grid grid-cols-12 px-8 py-6 items-center transition-colors hover:bg-gray-50 ${
-                    user.status.trim().toLowerCase() === "active" ? "bg-[#f4faf7]/50" : ""
+                  key={request._id || `${request.userId._id}-${request.createdAt}`}
+                  className={`grid grid-cols-12 px-10 py-7 items-center transition-colors hover:bg-gray-50 ${
+                    request.status.trim().toLowerCase() === "approved" ? "bg-[#f4faf7]/50" : ""
                   }`}
                 >
-                  <div className="col-span-5 font-medium text-gray-700">
-                    {user.userName || "N/A"}
+                  <div className="col-span-4 text-base font-medium text-gray-700">
+                    {getUserName(request)}
                   </div>
-                  <div className="col-span-5">
-                    <span className={`text-sm font-medium ${getStatusTextClasses(user.status)}`}>
-                      {formatStatus(user.status)}
+                  <div className="col-span-3 text-base text-gray-600">
+                    {request.planId.name || "N/A"}
+                  </div>
+                  <div className="col-span-3">
+                    <span
+                      className={`text-base font-medium ${getStatusTextClasses(request.status)}`}
+                    >
+                      {formatStatus(request.status)}
                     </span>
                   </div>
                   <div className="col-span-2 flex justify-end">
                     <button
                       type="button"
-                      onClick={() => handleOpenModal(user)}
-                      className="w-8 h-8 rounded-full bg-[#4f795a] text-white flex items-center justify-center hover:bg-[#3d5e46] transition-all shadow-sm"
+                      onClick={() => handleOpenModal(request)}
+                      className="w-9 h-9 rounded-full bg-[#4f795a] text-white flex items-center justify-center hover:bg-[#3d5e46] transition-all shadow-sm"
                     >
                       <Eye size={14} />
                     </button>
@@ -217,24 +265,23 @@ export default function AccessPage() {
               ))
             ) : (
               <div className="px-8 py-12 text-center text-sm text-gray-500">
-                {isFetching ? "Refreshing users..." : "No users found."}
+                {isFetching ? "Refreshing subscription requests..." : "No subscription requests found."}
               </div>
             )}
           </div>
         </div>
 
-        {/* Pagination */}
-        {!isLoading && users.length > 0 && totalPages > 1 && (
-          <div className="px-8 py-6 border-t border-gray-100 bg-[#fbfbfb] flex items-center justify-between">
+        {!isLoading && subscriptionRequests.length > 0 && totalPages > 1 && (
+          <div className="px-10 py-7 border-t border-gray-100 bg-[#fbfbfb] flex items-center justify-between">
             <div className="text-sm text-gray-500">
-              Showing page <span className="font-medium text-gray-700">{currentPage}</span> of{" "}
+              Showing page <span className="font-medium text-gray-700">{activePage}</span> of{" "}
               <span className="font-medium text-gray-700">{totalPages}</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
+                onClick={() => handlePageChange(activePage - 1)}
+                disabled={activePage === 1}
                 className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronLeft size={18} />
@@ -244,12 +291,12 @@ export default function AccessPage() {
                 let pageNum;
                 if (totalPages <= 5) {
                   pageNum = i + 1;
-                } else if (currentPage <= 3) {
+                } else if (activePage <= 3) {
                   pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
+                } else if (activePage >= totalPages - 2) {
                   pageNum = totalPages - 4 + i;
                 } else {
-                  pageNum = currentPage - 2 + i;
+                  pageNum = activePage - 2 + i;
                 }
 
                 return (
@@ -258,7 +305,7 @@ export default function AccessPage() {
                     type="button"
                     onClick={() => handlePageChange(pageNum)}
                     className={`min-w-[40px] h-10 rounded-lg text-sm font-medium transition-all ${
-                      currentPage === pageNum
+                      activePage === pageNum
                         ? "bg-[#4f795a] text-white shadow-sm"
                         : "text-gray-600 hover:bg-gray-50 border border-transparent hover:border-gray-200"
                     }`}
@@ -270,8 +317,8 @@ export default function AccessPage() {
 
               <button
                 type="button"
-                onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
+                onClick={() => handlePageChange(activePage + 1)}
+                disabled={activePage === totalPages}
                 className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronRight size={18} />
@@ -281,108 +328,116 @@ export default function AccessPage() {
         )}
       </div>
 
-      {selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-[600px] flex flex-col rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center px-6 py-4 bg-white border-b border-gray-50 z-10">
-              <h2 className="text-xl font-bold text-gray-700">User Details</h2>
+      {selectedRequest && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+          onClick={handleCloseModal}
+        >
+          <div
+            className="bg-white w-full max-w-[520px] flex flex-col rounded-lg shadow-2xl max-h-[94vh] overflow-hidden animate-in fade-in zoom-in duration-200"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex justify-between items-center px-6 py-5 bg-white z-10">
+              <h2 className="text-base font-medium text-gray-800">User Details</h2>
               <button
                 type="button"
                 onClick={handleCloseModal}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                disabled={isApproving}
+                className="text-gray-700 hover:text-gray-900 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <X size={24} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="overflow-y-auto bg-[#FFF9F2] p-6 space-y-8">
+            <div className="mx-4 mb-4 overflow-y-auto rounded-xl border border-[#F5EAD9] bg-[#FFF9F2] p-6">
+              <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+                <div>
+                  <p className="text-[#9CA3AF] text-[13px] mb-1">User ID</p>
+                  <p className="text-gray-800 text-[13px] break-all">
+                    {selectedRequest.userId._id || selectedRequest._id}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[#9CA3AF] text-[13px] mb-1">Email</p>
+                  <p className="text-gray-800 text-[13px] break-all">
+                    {selectedRequest.userId.email || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[#9CA3AF] text-[13px] mb-1">Joined&nbsp; Date</p>
+                  <p className="text-gray-800 text-[13px]">
+                    {formatDate(selectedRequest.createdAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[#9CA3AF] text-[13px] mb-1">Status</p>
+                  <p
+                    className={`text-[13px] font-medium ${getStatusTextClasses(
+                      selectedRequest.status,
+                    )}`}
+                  >
+                    {formatStatus(selectedRequest.status)}
+                  </p>
+                </div>
+              </div>
+
               {saveMessage && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                <div className="mt-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
                   {saveMessage}
                 </div>
               )}
 
               {saveErrorMessage && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
                   {saveErrorMessage}
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-4">
-                <div>
-                  <p className="text-[#9CA3AF] text-sm mb-1 font-medium">User ID</p>
-                  <p className="text-gray-800 text-[15px]">{selectedUser.id}</p>
-                </div>
-                <div>
-                  <p className="text-[#9CA3AF] text-sm mb-1 font-medium">Email</p>
-                  <p className="text-gray-800 text-[15px]">{selectedUser.email}</p>
-                </div>
-                <div>
-                  <p className="text-[#9CA3AF] text-sm mb-1 font-medium">Joined Date</p>
-                  <p className="text-gray-800 text-[15px]">{formatDate(selectedUser.joinedDate)}</p>
-                </div>
-                <div>
-                  <p className="text-[#9CA3AF] text-sm mb-1 font-medium">Status</p>
-                  <select
-                    value={nextStatus}
-                    onChange={(event) => setNextStatus(event.target.value)}
-                    disabled={isUpdatingStatus}
-                    className="w-full rounded-lg border border-[#E5DED2] bg-white px-3 py-2 text-gray-800 text-[15px] outline-none transition-colors focus:border-[#4f795a]"
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="bg-[#FFF9F2] rounded-xl border border-[#F5EAD9] p-5">
-                <h3 className="text-xl text-[#8c9bab] mb-4">Assessment Results</h3>
+              <div className="mt-6 rounded-xl border border-[#F5EAD9] bg-[#FFF9F2] p-5">
+                <h3 className="mb-4 text-base text-[#8c9bab]">Assessment Results</h3>
 
                 <div className="space-y-4">
-                  <div className="border-b border-[#EAE0D5] pb-3 last:border-0 last:pb-0">
-                    <p className="text-[#9CA3AF] text-sm mb-1">Depression (PHQ-9)</p>
-                    <p className="text-sm">
-                      <span className="font-bold text-gray-800">Not available</span>
-                      <span className="text-[#9CA3AF] ml-1 text-xs">(Score: N/A)</span>
+                  <div className="border-b border-[#EAE0D5] pb-3">
+                    <p className="text-[#9CA3AF] text-xs mb-1">Depression (PHQ-9)</p>
+                    <p className="text-xs text-gray-800">
+                      <span className="font-bold">Minimal</span>
+                      <span className="text-[#9CA3AF] ml-1">(Score: 0/27)</span>
                     </p>
                   </div>
-                  <div className="border-b border-[#EAE0D5] pb-3 last:border-0 last:pb-0">
-                    <p className="text-[#9CA3AF] text-sm mb-1">Anxiety (GAD-7)</p>
-                    <p className="text-sm">
-                      <span className="font-bold text-gray-800">Not available</span>
-                      <span className="text-[#9CA3AF] ml-1 text-xs">(Score: N/A)</span>
+                  <div className="border-b border-[#EAE0D5] pb-3">
+                    <p className="text-[#9CA3AF] text-xs mb-1">Anxiety (GAD-7)</p>
+                    <p className="text-xs text-gray-800">
+                      <span className="font-bold">Minimal</span>
+                      <span className="text-[#9CA3AF] ml-1">(Score: 0/21)</span>
                     </p>
                   </div>
                   <div>
-                    <p className="text-[#9CA3AF] text-sm mb-1">Dissociation (DES-II)</p>
-                    <p className="text-sm">
-                      <span className="font-bold text-gray-800">Score: N/A</span>
+                    <p className="text-[#9CA3AF] text-xs mb-1">Dissociation (DES-II)</p>
+                    <p className="text-xs text-gray-800">
+                      <span className="font-bold">Score: 0.0%</span>
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div>
-                <h3 className="text-xl text-[#8c9bab] mb-4 pl-1">Immediate Support Available</h3>
+              <div className="mt-5 rounded-xl border border-[#F5EAD9] bg-white p-5">
+                <h3 className="mb-5 text-base text-[#8c9bab]">Immediate Support Available</h3>
 
-                <div className="bg-white rounded-xl p-6 shadow-sm space-y-5">
+                <div className="rounded-xl bg-[#FFF9F2] p-5 space-y-5">
                   <div>
-                    <p className="font-bold text-gray-800 text-sm">Samaritans (24/7)</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="font-bold text-gray-800 text-xs">Samaritans (24/7)</p>
+                    <p className="text-[11px] text-gray-500 mt-1">
                       Free emotional support for anyone in distress
                     </p>
-                    <p className="text-xs text-gray-800 font-bold mt-1">
+                    <p className="text-[11px] text-gray-800 font-bold mt-1">
                       Call: 116 123{" "}
                       <span className="text-[#9CA3AF] font-normal">(Free from any phone)</span>
                     </p>
                   </div>
                   <div>
-                    <p className="font-bold text-gray-800 text-sm">NHS Crisis Line</p>
-                    <p className="text-xs text-gray-500 mt-1">Urgent mental health support</p>
-                    <p className="text-xs text-gray-800 font-bold mt-1">
+                    <p className="font-bold text-gray-800 text-xs">NHS Crisis Line</p>
+                    <p className="text-[11px] text-gray-500 mt-1">Urgent mental health support</p>
+                    <p className="text-[11px] text-gray-800 font-bold mt-1">
                       Call: 111{" "}
                       <span className="text-[#9CA3AF] font-normal">
                         and select mental health option
@@ -390,21 +445,21 @@ export default function AccessPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="font-bold text-gray-800 text-sm">SHOUT Crisis Text Line</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="font-bold text-gray-800 text-xs">SHOUT Crisis Text Line</p>
+                    <p className="text-[11px] text-gray-500 mt-1">
                       24/7 text support for anyone in crisis
                     </p>
-                    <p className="text-xs text-gray-800 font-normal mt-1">
+                    <p className="text-[11px] text-gray-800 font-normal mt-1">
                       Text &quot;<span className="font-bold">SHOUT</span>&quot; to{" "}
                       <span className="font-bold">85258</span>
                     </p>
                   </div>
                   <div>
-                    <p className="font-bold text-gray-800 text-sm">Your GP Surgery</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="font-bold text-gray-800 text-xs">Your GP Surgery</p>
+                    <p className="text-[11px] text-gray-500 mt-1">
                       Contact your GP for an urgent appointment
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-[11px] text-gray-500 mt-0.5">
                       They can provide immediate support and referrals
                     </p>
                   </div>
@@ -412,21 +467,26 @@ export default function AccessPage() {
               </div>
             </div>
 
-            <div className="p-5 bg-white border-t border-gray-100 flex gap-4">
+            <div className="grid grid-cols-2 gap-3 px-4 pb-4 bg-white">
               <button
                 type="button"
                 onClick={handleCloseModal}
-                className="flex-1 py-3 bg-[#F9FAFB] text-[#4F7A5B] rounded-lg font-bold text-lg hover:bg-gray-100 transition-colors shadow-sm border border-gray-200"
+                disabled={isApproving}
+                className="h-10 rounded-md border border-gray-200 bg-[#F9FAFB] text-sm font-medium text-[#4F7A5B] shadow-sm transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => void handleSaveStatus()}
-                disabled={isUpdatingStatus || nextStatus === selectedUser.status}
-                className="flex-1 py-3 bg-[#4F7A5B] text-white rounded-lg font-bold text-lg hover:bg-[#3E634A] transition-colors shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => void handleApproveRequest()}
+                disabled={isApproving || selectedRequest.status.trim().toLowerCase() === "approved"}
+                className="h-10 rounded-md bg-[#4F7A5B] text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#3E634A] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isUpdatingStatus ? "Saving..." : "Save Status"}
+                {isApproving
+                  ? "Approving..."
+                  : selectedRequest.status.trim().toLowerCase() === "approved"
+                    ? "Approved"
+                    : "Approve"}
               </button>
             </div>
           </div>

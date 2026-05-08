@@ -191,6 +191,7 @@ export const baseApi = createApi({
     "PrivacyPolicy",
     "TermsPolicy",
     "SubscriptionPlan",
+    "SubscriptionRequest",
     "SupportTickets",
     "Users",
   ],
