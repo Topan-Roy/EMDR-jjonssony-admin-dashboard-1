@@ -172,11 +172,11 @@ export default function AccessPage() {
       setSelectedRequest((currentRequest) =>
         currentRequest
           ? {
-              ...currentRequest,
-              status: response.status || "approved",
-              adminComment: response.adminComment || APPROVAL_COMMENT,
-              updatedAt: new Date().toISOString(),
-            }
+            ...currentRequest,
+            status: response.status || "approved",
+            adminComment: response.adminComment || APPROVAL_COMMENT,
+            updatedAt: new Date().toISOString(),
+          }
           : currentRequest,
       );
       setSaveMessage(response.message || "Application approved successfully.");
@@ -235,9 +235,8 @@ export default function AccessPage() {
               requests.map((request) => (
                 <div
                   key={request._id || `${request.userId._id}-${request.createdAt}`}
-                  className={`grid grid-cols-12 px-10 py-7 items-center transition-colors hover:bg-gray-50 ${
-                    request.status.trim().toLowerCase() === "approved" ? "bg-[#f4faf7]/50" : ""
-                  }`}
+                  className={`grid grid-cols-12 px-10 py-7 items-center transition-colors hover:bg-gray-50 ${request.status.trim().toLowerCase() === "approved" ? "bg-[#f4faf7]/50" : ""
+                    }`}
                 >
                   <div className="col-span-4 text-base font-medium text-gray-700">
                     {getUserName(request)}
@@ -304,11 +303,10 @@ export default function AccessPage() {
                     key={pageNum}
                     type="button"
                     onClick={() => handlePageChange(pageNum)}
-                    className={`min-w-[40px] h-10 rounded-lg text-sm font-medium transition-all ${
-                      activePage === pageNum
+                    className={`min-w-[40px] h-10 rounded-lg text-sm font-medium transition-all ${activePage === pageNum
                         ? "bg-[#4f795a] text-white shadow-sm"
                         : "text-gray-600 hover:bg-gray-50 border border-transparent hover:border-gray-200"
-                    }`}
+                      }`}
                   >
                     {pageNum}
                   </button>
