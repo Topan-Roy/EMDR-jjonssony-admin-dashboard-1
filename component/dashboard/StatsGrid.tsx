@@ -12,7 +12,7 @@ interface StatCardProps {
 const StatCard = ({ title, value, percentage, subText }: StatCardProps) => {
   return (
     <div className="bg-white p-8 rounded-[2rem] shadow-sm flex flex-col justify-between min-h-[210px] border border-gray-50">
-      <h3 className="text-[#8e8e8e]   text-xl font-light mb-2">
+      <h3 className="text-black   text-xl font-light mb-2">
         {title}
       </h3>
 
