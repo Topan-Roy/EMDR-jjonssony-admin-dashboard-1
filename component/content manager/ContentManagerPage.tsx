@@ -104,6 +104,7 @@ export default function ContentManagerPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [contentToDelete, setContentToDelete] = useState<ContentItem | null>(null);
   
   // Modals State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -312,7 +313,7 @@ export default function ContentManagerPage() {
                         <Eye size={16} />
                       </button>
                       <button 
-                        onClick={() => void handleDelete(item.id)}
+                        onClick={() => setContentToDelete(item)}
                         disabled={deletingId === item.id}
                         className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -402,6 +403,47 @@ export default function ContentManagerPage() {
           onClose={() => setIsUploadModalOpen(false)} 
           onUpload={handleUpload}
         />
+      )}
+
+      {contentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-[420px] rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
+                <Trash2 size={20} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-900">Delete content?</h2>
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  Are you sure you want to delete <span className="font-medium text-gray-700">{contentToDelete.name}</span>? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setContentToDelete(null)}
+                disabled={deletingId === contentToDelete.id}
+                className="rounded-lg bg-gray-100 px-5 py-2.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = contentToDelete.id;
+                  setContentToDelete(null);
+                  void handleDelete(id);
+                }}
+                disabled={deletingId === contentToDelete.id}
+                className="rounded-lg bg-red-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* --- VIEW DETAILS MODAL (New) --- */}
