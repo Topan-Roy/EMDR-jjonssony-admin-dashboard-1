@@ -14,6 +14,7 @@ import Link from "next/link";
 import {
   useGetSupportTicketsQuery,
   useUpdateTicketMutation,
+  useSendUserNotificationMutation,
   type Ticket,
 } from "../redux/features/supportApi";
 
@@ -42,6 +43,7 @@ export default function SettingSupportRequestsPage() {
     limit: 50,
   });
   const [updateTicket, { isLoading: isUpdating }] = useUpdateTicketMutation();
+  const [sendNotification] = useSendUserNotificationMutation();
 
   const tickets = data?.tickets || [];
 
@@ -72,6 +74,26 @@ export default function SettingSupportRequestsPage() {
           status,
         },
       }).unwrap();
+
+      const ticket = tickets.find((t: Ticket) => t._id === ticketId);
+      const userId = ticket?.userId && typeof ticket.userId === "object" ? ticket.userId._id : ticket?.userId;
+
+      if (userId && replyText.trim()) {
+        try {
+          await sendNotification({
+            userId: userId as string,
+            title: "Support Request Reply",
+            body: replyText.trim(),
+            data: {
+              type: "support_reply",
+              ticketId,
+            },
+          }).unwrap();
+        } catch (notifErr) {
+          console.error("Failed to send notification:", notifErr);
+        }
+      }
+
       setReplyText("");
       // Optionally auto-collapse or keep open
     } catch (err) {

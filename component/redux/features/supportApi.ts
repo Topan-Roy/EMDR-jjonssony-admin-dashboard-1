@@ -62,8 +62,15 @@ export const supportApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["SupportTickets"],
     }),
+    sendUserNotification: builder.mutation<any, { userId: string; title: string; body: string; data?: any }>({
+      query: (payload) => ({
+        url: `/api/notifications/send/user`,
+        method: "POST",
+        body: payload,
+      }),
+    }),
   }),
   overrideExisting: false,
 });
 
-export const { useGetSupportTicketsQuery, useUpdateTicketMutation } = supportApi;
+export const { useGetSupportTicketsQuery, useUpdateTicketMutation, useSendUserNotificationMutation } = supportApi;
